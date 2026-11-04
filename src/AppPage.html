@@ -38,7 +38,7 @@ function loadInv() {
 }
 function stocked(rec) { return (st.inv || []).filter(function (r) { return r.category === rec.category && r.groupKey === rec.groupKey; })[0] || null; }
 var st = { scan: null, msg: '', inv: null };       // last server answers
-var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '', sort: '', dir: 'asc', cat: '' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
 
 function el(tag, props, kids) {
   var e = document.createElement(tag);
@@ -219,7 +219,9 @@ function searchView() {
   var draw = function () {
     out.innerHTML = '';
     if (!st.inv) return out.appendChild(el('div', { className: 'small', text: 'Loading inventory...' }));
-    var hits = searchRows_(st.inv, ui.query, 100);
+    var found = searchRows_(st.inv, ui.query, 100000).filter(function (r) { return !ui.cat || r.category === ui.cat; });
+    var hits = sortRows_(found, ui.sort, ui.dir).slice(0, 100);
+    count.textContent = (found.length > hits.length ? hits.length + ' of ' + found.length : String(found.length)) + ' result(s)';
     hits.forEach(function (x) {
       out.appendChild(el('div', { className: 'card' }, [
         el('div', { className: 'row' }, [el('span', { className: 'big', text: [x.value, x.package].filter(Boolean).join(' ') || x.mpns.split(', ')[0] }), el('span', { className: 'big', text: String(x.qty) })]),
@@ -230,9 +232,19 @@ function searchView() {
     });
     if (!hits.length) out.appendChild(el('div', { className: 'small', text: 'Nothing matched.' }));
   };
+  var count = el('div', { className: 'small' });
+  var mk = function (key, opts, val) {   // a select that redraws only the result list
+    var s = el('select', {}, opts.map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === val }); }));
+    s.addEventListener('change', function () { ui[key] = s.value; draw(); });
+    return s;
+  };
+  var sortSel = mk('sort', [['', 'Sort: relevance'], ['category', 'Category'], ['value', 'Value'], ['package', 'Package'], ['qty', 'Quantity'], ['location', 'Location'], ['part', 'Part number'], ['updated', 'Updated']], ui.sort);
+  var catSel = mk('cat', [['', 'All categories']].concat(CATEGORIES.map(function (c) { return [c, c]; })), ui.cat);
+  var dirBtn = el('button', { className: 'sec', text: ui.dir === 'desc' ? 'Descending' : 'Ascending' });
+  dirBtn.addEventListener('click', function () { ui.dir = ui.dir === 'desc' ? 'asc' : 'desc'; dirBtn.textContent = ui.dir === 'desc' ? 'Descending' : 'Ascending'; draw(); });
   var box = field('Words must all match, e.g. 0402 20k or 100nF X7R', 'query', { placeholder: 'search inventory' });
   box.children[1].addEventListener('input', draw);   // redraws only the result list, so the phone keyboard stays open
-  root.appendChild(el('div', { className: 'card' }, [box]));
+  root.appendChild(el('div', { className: 'card' }, [box, el('div', { className: 'row' }, [sortSel, catSel]), dirBtn, count]));
   draw();
   root.appendChild(out);
   return root;

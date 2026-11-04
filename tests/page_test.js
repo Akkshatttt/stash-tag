@@ -79,6 +79,19 @@ assert.ok(/Nothing matched/.test(p.text()));
 p = openPage({ load: new Error('forbidden') });
 assert.ok(/Error: forbidden/.test(p.text()));
 
+// search sorting: no server call, order follows the controls
+const srow = (v, q, m, cat) => Object.assign({}, row, { value: v, qty: q, mpns: m, category: cat || 'Capacitors', description: 'D' + m });
+p = openPage({ load: { rows: [srow('1uF', 5, 'B'), srow('100nF', 50, 'A'), srow('2.2k', 7, 'C', 'Resistors')] } });
+p.byId.t2.click();
+const order = () => ['A', 'B', 'C'].map(m => [m, p.text().indexOf('D' + m)]).sort((a, b) => a[1] - b[1]).map(x => x[0]).join('');
+const sel = () => p.byId.app.find(e => e.tag === 'select');
+assert.strictEqual(order(), 'BAC'); assert.ok(/3 result/.test(p.text()));
+sel()[0].value = 'value'; sel()[0].fire('change'); assert.strictEqual(order(), 'ABC');
+p.byId.app.find(e => e.textContent === 'Ascending')[0].click(); assert.strictEqual(order(), 'CBA');
+sel()[0].value = 'qty'; sel()[0].fire('change'); assert.strictEqual(order(), 'ACB');
+sel()[1].value = 'Resistors'; sel()[1].fire('change'); assert.ok(/1 result/.test(p.text()) && !/DA/.test(p.text()));
+assert.deepStrictEqual(p.calls, [{ action: 'load' }], 'sorting makes no server call');
+
 // two separate scan buttons; live scan: blocked camera, then detect -> popup -> confirm -> normal part card
 p = openPage({ load: { rows: [] } });
 assert.ok(p.byId.app.find(e => e.textContent === 'Scan label (take photo)').length && p.byId.app.find(e => e.textContent === 'Live scan (camera)').length, 'photo and live buttons are separate');

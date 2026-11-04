@@ -18,7 +18,7 @@ function doGet(e) {
 function clientLib_() {
   var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM };
   return Object.keys(vars).map(function (n) { return 'var ' + n + '=' + JSON.stringify(vars[n]) + ';'; }).join('\n') + '\n' +
-    [squash, eng_, parseValue_, searchRows_, makeDecoder_, decodeWasm_].map(String).join('\n');
+    [squash, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_].map(String).join('\n');
 }
 
 /** Called by the page. Names ending in _ are hidden from the page. */
