@@ -1,0 +1,15 @@
+# Secrets and local state: never commit
+private/
+node_modules/
+.clasp.json
+.env
+*.keys.json
+keys.json
+
+# Author-only: handover, planning, learnings (kept locally, never pushed)
+HANDOVER.md
+LEARNINGS.md
+FEATURES.md
+CLAUDE.md
+.claude/
+graphify-out/

@@ -1,0 +1,328 @@
+{
+ "SearchLocaleUsed": {
+  "Site": "IN",
+  "Language": "en",
+  "Currency": "INR"
+ },
+ "Product": {
+  "Description": {
+   "ProductDescription": "CAP CER 10000PF 50V X7R 0402",
+   "DetailedDescription": "10000 pF \u00b110% 50V Ceramic Capacitor X7R 0402 (1005 Metric)"
+  },
+  "Manufacturer": {
+   "Id": 399,
+   "Name": "KEMET"
+  },
+  "ManufacturerProductNumber": "C0402C103K5RACTU",
+  "UnitPrice": 9.51,
+  "ProductUrl": "https://www.digikey.in/en/products/detail/kemet/C0402C103K5RACTU/501968",
+  "DatasheetUrl": "https://yageogroup.com/content/datasheet/asset/file/KEM_C1002_X7R_SMD",
+  "PhotoUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/medias/images/5357/0402-%281005-Metric%29-Ceramic-Capacitor.jpg",
+  "ProductVariations": [
+   {
+    "DigiKeyProductNumber": "399-C0402C103K5RACTUTR-ND",
+    "PackageType": {
+     "Id": 1,
+     "Name": "Tape & Reel (TR)"
+    },
+    "StandardPricing": [
+     {
+      "BreakQuantity": 10000,
+      "UnitPrice": 0.95357,
+      "TotalPrice": 9535.7
+     },
+     {
+      "BreakQuantity": 30000,
+      "UnitPrice": 0.82828,
+      "TotalPrice": 24848.4
+     }
+    ],
+    "MyPricing": [],
+    "MarketPlace": false,
+    "TariffActive": true,
+    "Supplier": {
+     "Id": 399,
+     "Name": "KEMET"
+    },
+    "QuantityAvailableforPackageType": 1729205,
+    "MinimumOrderQuantity": 10000,
+    "DigiReelFee": 0.0
+   },
+   {
+    "DigiKeyProductNumber": "399-C0402C103K5RACTUCT-ND",
+    "PackageType": {
+     "Id": 2,
+     "Name": "Cut Tape (CT)"
+    },
+    "StandardPricing": [
+     {
+      "BreakQuantity": 1,
+      "UnitPrice": 9.51,
+      "TotalPrice": 9.51
+     },
+     {
+      "BreakQuantity": 10,
+      "UnitPrice": 3.9,
+      "TotalPrice": 39.0
+     },
+     {
+      "BreakQuantity": 50,
+      "UnitPrice": 2.606,
+      "TotalPrice": 130.3
+     },
+     {
+      "BreakQuantity": 100,
+      "UnitPrice": 2.2256,
+      "TotalPrice": 222.56
+     },
+     {
+      "BreakQuantity": 500,
+      "UnitPrice": 1.58264,
+      "TotalPrice": 791.32
+     }
+    ],
+    "MyPricing": [],
+    "MarketPlace": false,
+    "TariffActive": true,
+    "Supplier": {
+     "Id": 399,
+     "Name": "KEMET"
+    },
+    "QuantityAvailableforPackageType": 1729920,
+    "MinimumOrderQuantity": 1,
+    "DigiReelFee": 0.0
+   },
+   {
+    "DigiKeyProductNumber": "399-C0402C103K5RACTUDKR-ND",
+    "PackageType": {
+     "Id": 243,
+     "Name": "Digi-Reel\u00ae"
+    },
+    "StandardPricing": [
+     {
+      "BreakQuantity": 1,
+      "UnitPrice": 9.51,
+      "TotalPrice": 9.51
+     },
+     {
+      "BreakQuantity": 10,
+      "UnitPrice": 3.9,
+      "TotalPrice": 39.0
+     },
+     {
+      "BreakQuantity": 50,
+      "UnitPrice": 2.606,
+      "TotalPrice": 130.3
+     },
+     {
+      "BreakQuantity": 100,
+      "UnitPrice": 2.2256,
+      "TotalPrice": 222.56
+     },
+     {
+      "BreakQuantity": 500,
+      "UnitPrice": 1.58264,
+      "TotalPrice": 791.32
+     }
+    ],
+    "MyPricing": [],
+    "MarketPlace": false,
+    "TariffActive": true,
+    "Supplier": {
+     "Id": 399,
+     "Name": "KEMET"
+    },
+    "QuantityAvailableforPackageType": 1729920,
+    "MaxQuantityForDistribution": 100000,
+    "MinimumOrderQuantity": 1,
+    "StandardPackage": 1,
+    "DigiReelFee": 452.0
+   }
+  ],
+  "QuantityAvailable": 1729920,
+  "ProductStatus": {
+   "Id": 0,
+   "Status": "Active"
+  },
+  "BackOrderNotAllowed": false,
+  "NormallyStocking": true,
+  "Discontinued": false,
+  "EndOfLife": false,
+  "Ncnr": false,
+  "PrimaryVideoUrl": "",
+  "Parameters": [
+   {
+    "ParameterId": 2049,
+    "ParameterText": "Capacitance",
+    "ParameterType": "UnitOfMeasure",
+    "ValueId": "10000 pF",
+    "ValueText": "10000 pF"
+   },
+   {
+    "ParameterId": 3,
+    "ParameterText": "Tolerance",
+    "ParameterType": "String",
+    "ValueId": "1340",
+    "ValueText": "\u00b110%"
+   },
+   {
+    "ParameterId": 14,
+    "ParameterText": "Voltage - Rated",
+    "ParameterType": "String",
+    "ValueId": "238738",
+    "ValueText": "50V"
+   },
+   {
+    "ParameterId": 17,
+    "ParameterText": "Temperature Coefficient",
+    "ParameterType": "String",
+    "ValueId": "422415",
+    "ValueText": "X7R"
+   },
+   {
+    "ParameterId": 252,
+    "ParameterText": "Operating Temperature",
+    "ParameterType": "String",
+    "ValueId": "242918",
+    "ValueText": "-55\u00b0C ~ 125\u00b0C"
+   },
+   {
+    "ParameterId": 5,
+    "ParameterText": "Features",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   },
+   {
+    "ParameterId": 707,
+    "ParameterText": "Ratings",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   },
+   {
+    "ParameterId": 405,
+    "ParameterText": "Applications",
+    "ParameterType": "String",
+    "ValueId": "323975",
+    "ValueText": "Bypass, Decoupling"
+   },
+   {
+    "ParameterId": 1531,
+    "ParameterText": "Failure Rate",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   },
+   {
+    "ParameterId": 69,
+    "ParameterText": "Mounting Type",
+    "ParameterType": "String",
+    "ValueId": "409416",
+    "ValueText": "Surface Mount, MLCC"
+   },
+   {
+    "ParameterId": 16,
+    "ParameterText": "Package / Case",
+    "ParameterType": "String",
+    "ValueId": "39158",
+    "ValueText": "0402 (1005 Metric)"
+   },
+   {
+    "ParameterId": 46,
+    "ParameterText": "Size / Dimension",
+    "ParameterType": "String",
+    "ValueId": "6310",
+    "ValueText": "0.039\" L x 0.020\" W (1.00mm x 0.50mm)"
+   },
+   {
+    "ParameterId": 1500,
+    "ParameterText": "Height - Seated (Max)",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   },
+   {
+    "ParameterId": 1501,
+    "ParameterText": "Thickness (Max)",
+    "ParameterType": "String",
+    "ValueId": "5314",
+    "ValueText": "0.022\" (0.55mm)"
+   },
+   {
+    "ParameterId": 508,
+    "ParameterText": "Lead Spacing",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   },
+   {
+    "ParameterId": 4,
+    "ParameterText": "Lead Style",
+    "ParameterType": "String",
+    "ValueId": "1",
+    "ValueText": "-"
+   }
+  ],
+  "BaseProductNumber": {
+   "Id": 467203,
+   "Name": "C0402C"
+  },
+  "Category": {
+   "CategoryId": 3,
+   "ParentId": 0,
+   "Name": "Capacitors",
+   "ProductCount": 0,
+   "NewProductCount": 0,
+   "ImageUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/derivates/3/002/640/398/BCAP0350%20E270%20T11_tmb%2864x64%29.jpg",
+   "SeoDescription": "Capacitor products, also known as \"condensers\", are generally named and organized in reference to the dielectric material incorporated within. Along with variations in construction methods, the choice of dielectric material has strong influence on a given device's relative cost, size, parametric stability, and suitability for a particular application.",
+   "ChildCategories": [
+    {
+     "CategoryId": 60,
+     "ParentId": 3,
+     "Name": "Ceramic Capacitors",
+     "ProductCount": 0,
+     "NewProductCount": 0,
+     "ImageUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/derivates/3/300/365/960/CGA-Series-0402-%281005-Metric%29_tmb.jpg",
+     "SeoDescription": "A capacitor is a passive electronic device that stores electric charge. Ceramic capacitors consist of two or more alternating layers of ceramic material as the dielectric and metal layers acting as the non-polarized electrodes. Applications include automotive, bypass, decoupling, filtering, RF, and ESD protection. Through-hole versions are often disc or \"blob\" shaped with two wire leads.",
+     "ChildCategories": []
+    }
+   ]
+  },
+  "ManufacturerLeadWeeks": "17",
+  "ManufacturerPublicQuantity": 0,
+  "Series": {
+   "Id": 70691,
+   "Name": "SMD Comm X7R"
+  },
+  "Classifications": {
+   "ReachStatus": "REACH Unaffected",
+   "RohsStatus": "ROHS3 Compliant",
+   "MoistureSensitivityLevel": "1  (Unlimited)",
+   "ExportControlClassNumber": "EAR99",
+   "HtsusCode": "8532.24.0020"
+  },
+  "OtherNames": [
+   "399-3066-2",
+   "399-3066-6-ND",
+   "399-3066-1",
+   "399-C0402C103K5RAC7867DKR",
+   "399-C0402C103K5RAC7867CT",
+   "399-C0402C103K5RAC7867DKR-ND",
+   "C0402C103K5RAC",
+   "399-C0402C103K5RACTUTR",
+   "C0402C103K5RACTU",
+   "399-C0402C103K5RACTUDKR",
+   "399-C0402C103K5RAC7867CT-ND",
+   "399-3066-1-ND",
+   "399-3066-2-ND",
+   "C0402C103K5RAC7867",
+   "399-C0402C103K5RAC7867TR-ND",
+   "399-C0402C103K5RACTUCT",
+   "399-C0402C103K5RAC7867TR",
+   "399-3066-6"
+  ]
+ },
+ "AccountIdUsed": 0,
+ "CustomerIdUsed": 0
+}

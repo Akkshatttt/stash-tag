@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 16px -apple-system, system-ui, sans-serif; background: #fafafa; margin: 0; padding: 12px; color: #222; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs button { flex: 1; padding: 10px; border: 1px solid #ccc; background: #fff; border-radius: 8px; font-size: 16px; }
+  .tabs button.on { background: #222; color: #fff; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.15); padding: 12px; margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: #666; margin-top: 8px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; }
+  button.primary { width: 100%; padding: 12px; margin-top: 12px; background: #1e8e3e; color: #fff; border: 0; border-radius: 8px; font-size: 16px; }
+  button.sec { width: 100%; padding: 12px; margin-top: 8px; background: #1a73e8; color: #fff; border: 0; border-radius: 8px; font-size: 16px; }
+  .good { color: #1e8e3e; } .warn { color: #b06000; } .bad { color: #c5221f; }
+  .small { font-size: 13px; color: #666; } .big { font-size: 18px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="tabs"><button id="t1">Add stock</button><button id="t2">Search</button></div>
+<div id="app"></div>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script><?!= lib ?></script>
+<script>
+var TOKEN = <?!= JSON.stringify(token) ?>;
+var CATEGORIES = <?!= JSON.stringify(categories) ?>;
+var tab = 'add', busy = false;
+// The whole inventory is fetched once (background) and searched here, so Search and the 'already in stock' hint cost no server call.
+function loadInv() {
+  google.script.run.withSuccessHandler(function (r) { st.inv = r.rows; render(); })
+    .withFailureHandler(function (e) { st.msg = 'Error: ' + (e && e.message || e); render(); }).invCall(TOKEN, { action: 'load' });
+}
+function stocked(rec) { return (st.inv || []).filter(function (r) { return r.category === rec.category && r.groupKey === rec.groupKey; })[0] || null; }
+var st = { scan: null, msg: '', inv: null };       // last server answers
+var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+
+function el(tag, props, kids) {
+  var e = document.createElement(tag);
+  Object.keys(props || {}).forEach(function (k) { if (k === 'text') e.textContent = props[k]; else e[k] = props[k]; });
+  (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+  return e;
+}
+function field(label, key, props) {
+  var i = el('input', Object.assign({ value: ui[key] }, props || {}));
+  i.addEventListener('input', function () { ui[key] = i.value; });
+  return el('div', {}, [el('label', { text: label }), i]);
+}
+
+function call(req, cb) {
+  if (busy) return;
+  busy = true; st.msg = ''; render();
+  google.script.run
+    .withSuccessHandler(function (r) { busy = false; cb(r); render(); })
+    .withFailureHandler(function (e) { busy = false; st.msg = 'Error: ' + (e && e.message || e); render(); })
+    .invCall(TOKEN, req);
+}
+
+// ---- barcode decoding (ZXing in the browser). A photo is used because Apps Script pages cannot open a live camera.
+function decodeFile(file, done) {
+  var url = URL.createObjectURL(file), img = new Image();
+  img.onload = function () {
+    var sizes = [1600, 800], tryNext = function () {
+      var max = sizes.shift();
+      if (!max) { URL.revokeObjectURL(url); return done(null); }
+      var s = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      var F = ZXing.BarcodeFormat, hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.DATA_MATRIX, F.CODE_128, F.PDF_417, F.QR_CODE]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      var reader = new ZXing.BrowserMultiFormatReader(hints);
+      reader.decodeFromImageUrl(c.toDataURL('image/png')).then(function (r) { URL.revokeObjectURL(url); done(r.getText()); }, tryNext);
+    };
+    tryNext();
+  };
+  img.onerror = function () { done(null); };
+  img.src = url;
+}
+
+function doScan(text) {
+  ui.text = text; ui.qty = ''; ui.location = ''; ui.lot = '';
+  call({ action: 'scan', text: text }, function (r) {
+    st.scan = r;
+    if (r.rec) { ui.qty = r.parsed.qty ? String(r.parsed.qty) : ''; var ex = stocked(r.rec); ui.location = (ex && ex.location.split(' / ')[0]) || ''; ui.category = r.rec.category; ui.lot = r.parsed.lot || ''; }
+  });
+}
+
+function patchInv(row) {
+  if (!st.inv) return;
+  var i = st.inv.findIndex(function (x) { return x.category === row.category && x.groupKey === row.groupKey; });
+  if (i >= 0) st.inv[i] = row; else st.inv.push(row);
+}
+
+function stockLine(r) {
+  if (!st.inv) return el('div', { className: 'small', text: 'Checking stock...' });
+  var ex = stocked(Object.assign({}, r, { category: ui.category }));
+  return ex ? el('div', { className: 'warn', text: 'Already in stock: ' + ex.qty + (ex.location ? ' at ' + ex.location : '') }) : el('div', { className: 'good', text: 'New group' });
+}
+
+function addView() {
+  var root = el('div', {});
+  var cam = el('input', { type: 'file', accept: 'image/*' });
+  cam.setAttribute('capture', 'environment');
+  cam.style.display = 'none';
+  cam.addEventListener('change', function () {
+    if (!cam.files[0]) return;
+    st.msg = 'Reading barcode...'; render();
+    decodeFile(cam.files[0], function (t) {
+      if (t) { st.msg = ''; doScan(t); } else { st.msg = 'No barcode found. Try again closer, or type the part number below.'; render(); }
+    });
+  });
+  var snap = el('button', { className: 'primary', text: 'Scan label (take photo)', disabled: busy });
+  snap.addEventListener('click', function () { cam.value = ''; cam.click(); });
+  root.appendChild(el('div', { className: 'card' }, [cam, snap, field('...or type / paste a part number or barcode text', 'text', { placeholder: 'e.g. AC0402FR-072K2L' }),
+    (function () { var b = el('button', { className: 'sec', text: 'Look up', disabled: busy }); b.addEventListener('click', function () { if (ui.text) doScan(ui.text); }); return b; })()]));
+  var s = st.scan;
+  if (s && !s.rec) root.appendChild(el('div', { className: 'card' }, [el('div', { className: 'bad', text: 'Part not found.' })].concat((s.warnings || []).map(function (w) { return el('div', { className: 'small', text: w }); }))));
+  if (s && s.rec) {
+    var r = s.rec, sel = el('select', {}, CATEGORIES.map(function (c) { return el('option', { value: c, text: c, selected: c === ui.category }); }));
+    sel.addEventListener('change', function () { ui.category = sel.value; });
+    var add = el('button', { className: 'primary', text: 'Add to stock', disabled: busy });
+    add.addEventListener('click', function () {
+      var rec = Object.assign({}, r, { category: ui.category });
+      call({ action: 'confirm', rec: rec, qty: ui.qty, location: ui.location, lot: ui.lot }, function (res) {
+        patchInv(res.row);
+        st.scan = null; st.msg = (res.isNew ? 'New row: ' : 'Updated: ') + res.row.value + ' ' + res.row.package + ' ' + (res.row.mpns.split(', ')[0] || '') + ' now ' + res.row.qty + ' in ' + res.row.category;
+        ui.text = ''; ui.qty = ''; ui.location = '';
+      });
+    });
+    root.appendChild(el('div', { className: 'card' }, [
+      el('div', { className: 'big', text: r.mpn }),
+      el('div', { className: 'small', text: [r.manufacturer, r.supplier + (s.source === 'cache' ? ' (cached)' : ''), r.dkPn || r.mouserPn].filter(Boolean).join(' · ') }),
+      el('div', { text: r.description }),
+      el('div', { className: 'small', text: ['Group: ' + r.groupKey, r.spec].filter(Boolean).join(' · ') }),
+      stockLine(r),
+      el('label', { text: 'Sheet' }), sel,
+      field('Quantity added', 'qty', { type: 'number', inputMode: 'numeric', placeholder: 'how many' }),
+      field('Location', 'location', { placeholder: 'e.g. A1 or 1-12' }),
+      field('Lot', 'lot', {}),
+      add
+    ].concat((s.warnings || []).map(function (w) { return el('div', { className: 'small warn', text: w }); }))));
+  }
+  return root;
+}
+
+function searchView() {
+  var root = el('div', {}), out = el('div', {});
+  var draw = function () {
+    out.innerHTML = '';
+    if (!st.inv) return out.appendChild(el('div', { className: 'small', text: 'Loading inventory...' }));
+    var hits = searchRows_(st.inv, ui.query, 100);
+    hits.forEach(function (x) {
+      out.appendChild(el('div', { className: 'card' }, [
+        el('div', { className: 'row' }, [el('span', { className: 'big', text: [x.value, x.package].filter(Boolean).join(' ') || x.mpns.split(', ')[0] }), el('span', { className: 'big', text: String(x.qty) })]),
+        el('div', { className: 'small', text: [x.category, x.spec, x.location && ('@ ' + x.location)].filter(Boolean).join(' · ') }),
+        el('div', { text: x.description }),
+        el('div', { className: 'small', text: x.mpns })
+      ]));
+    });
+    if (!hits.length) out.appendChild(el('div', { className: 'small', text: 'Nothing matched.' }));
+  };
+  var box = field('Words must all match, e.g. 0402 20k or 100nF X7R', 'query', { placeholder: 'search inventory' });
+  box.children[1].addEventListener('input', draw);   // redraws only the result list, so the phone keyboard stays open
+  root.appendChild(el('div', { className: 'card' }, [box]));
+  draw();
+  root.appendChild(out);
+  return root;
+}
+
+function render() {
+  t1.className = tab === 'add' ? 'on' : ''; t2.className = tab === 'search' ? 'on' : '';
+  var app = document.getElementById('app');
+  app.innerHTML = '';
+  if (st.msg) app.appendChild(el('div', { className: 'card ' + (/^Error|not found|No barcode/.test(st.msg) ? 'bad' : 'good'), text: st.msg }));
+  if (busy) app.appendChild(el('div', { className: 'small', text: 'Working...' }));
+  app.appendChild(tab === 'add' ? addView() : searchView());
+}
+var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
+loadInv();
+t1.onclick = function () { tab = 'add'; render(); };
+t2.onclick = function () { tab = 'search'; render(); };
+render();
+</script>
+</body>
+</html>
