@@ -61,14 +61,15 @@ function call(req, cb) {
 function decodeFile(file, done) {
   var url = URL.createObjectURL(file), img = new Image();
   img.onload = function () {
-    var sizes = [1600, 800], tryNext = function () {
-      var max = sizes.shift();
+    var F = ZXing.BarcodeFormat, one = [F.CODE_128, F.PDF_417, F.QR_CODE];
+    var tries = [[1600, [F.DATA_MATRIX]], [800, [F.DATA_MATRIX]], [1600, one], [800, one]], tryNext = function () {   // Data Matrix first: labels also carry 1D bars (order/pick ids) that must not win over it
+      var tr = tries.shift(), max = tr && tr[0];
       if (!max) { URL.revokeObjectURL(url); return done(null); }
       var s = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
       c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      var F = ZXing.BarcodeFormat, hints = new Map();
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.DATA_MATRIX, F.CODE_128, F.PDF_417, F.QR_CODE]);
+      var hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, tr[1]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
       var reader = new ZXing.BrowserMultiFormatReader(hints);
       reader.decodeFromImageUrl(c.toDataURL('image/png')).then(function (r) { URL.revokeObjectURL(url); done(r.getText()); }, tryNext);
@@ -116,7 +117,11 @@ function addView() {
   root.appendChild(el('div', { className: 'card' }, [cam, snap, field('...or type / paste a part number or barcode text', 'text', { placeholder: 'e.g. AC0402FR-072K2L' }),
     (function () { var b = el('button', { className: 'sec', text: 'Look up', disabled: busy }); b.addEventListener('click', function () { if (ui.text) doScan(ui.text); }); return b; })()]));
   var s = st.scan;
-  if (s && !s.rec) root.appendChild(el('div', { className: 'card' }, [el('div', { className: 'bad', text: 'Part not found.' })].concat((s.warnings || []).map(function (w) { return el('div', { className: 'small', text: w }); }))));
+  if (s && !s.rec) {
+    var p = s.parsed || {}, shown = String(p.raw || '').replace(/\x1d/g, '<GS>').replace(/\x1e/g, '<RS>').replace(/\x04/g, '<EOT>');
+    root.appendChild(el('div', { className: 'card' }, [el('div', { className: 'bad', text: 'Part not found.' })].concat((s.warnings || []).map(function (w) { return el('div', { className: 'small', text: w }); }),
+      [el('div', { className: 'small', text: 'Decoded: ' + shown }), el('div', { className: 'small', text: 'Fields: ' + JSON.stringify(p.fields || {}) + ' | searched: ' + (p.supplierPn || p.mpn || '(none)') })])));
+  }
   if (s && s.rec) {
     var r = s.rec, sel = el('select', {}, CATEGORIES.map(function (c) { return el('option', { value: c, text: c, selected: c === ui.category }); }));
     sel.addEventListener('change', function () { ui.category = sel.value; });

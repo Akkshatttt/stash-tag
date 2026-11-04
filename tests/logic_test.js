@@ -32,6 +32,21 @@ t('parses a Mouser-style label (Mouser PN in P)', () => {
   const p = S.parseLabel_('[)>\x1e06\x1dP595-TPS7A4700RGWR\x1d1PTPS7A4700RGWR\x1dQ10\x1e\x04');
   assert.strictEqual(p.supplier, 'Mouser'); assert.strictEqual(p.supplierPn, '595-TPS7A4700RGWR'); assert.strictEqual(p.qty, 10);
 });
+const real = s => s.replace(/<rs>/g, '').replace(/<gs>/g, '').replace(/<eot>/g, '');
+t('real DigiKey labels (DigiKey forum, oeps fixtures)', () => {
+  let p = S.parseLabel_(real('[)><rs>06<gs>PC1,C3,C5-7<gs>1P860010672008<gs>30P732-8660-1-ND<gs>K<gs>1K86761783<gs>10K104669300<gs>9D1437<gs>1T317510011436695<gs>11K1<gs>4LCN<gs>Q1<gs>11ZPICK<gs>12Z5728615<gs>13Z999999<gs>20Z000'));
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.customerRef, p.qty, p.lot, p.dateCode, p.supplier], ['860010672008', '732-8660-1-ND', 'C1,C3,C5-7', 1, '317510011436695', '1437', 'DigiKey']);
+  p = S.parseLabel_(real('[)><rs>06<gs>P1727-6369-6-ND<gs>1P74LVC4245AD,118<gs>K<gs>1K69457592<gs>Q200<gs>20Z00'));   // no 30P: P is the DigiKey PN
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.customerRef, p.qty], ['74LVC4245AD,118', '1727-6369-6-ND', '', 200]);
+  p = S.parseLabel_(real('[)><rs>06<gs>POEPS080126 P-831 IA-1247<gs>1PSN74LVC4245APWR<gs>30P296-12183-1-ND<gs>9D2625+5<gs>Q3<rs><eot>'));
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.customerRef], ['SN74LVC4245APWR', '296-12183-1-ND', 'OEPS080126 P-831 IA-1247']);
+});
+t('real Mouser 2D labels carry no part number; customer PN is never searched', () => {
+  let p = S.parseLabel_(real('[)><rs>06<gs>K39997218<gs>14K001<gs>POEPS070090 #IA-1265<gs>Q195<gs>11K091714519<gs>4LJP<gs>1VHirose<rs><eot>'));
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.customerRef, p.qty, p.manufacturer], ['', '', 'OEPS070090 #IA-1265', 195, 'Hirose']);
+  p = S.parseLabel_(real('>[)>06<gs>K10033990<gs>14K008<gs>1P929974-4<gs>Q5<gs>11K052636800<gs>4LDE<gs>1VTE Connectivity'));   // stray ">" and no RS
+  assert.deepStrictEqual([p.mpn, p.qty, p.manufacturer], ['929974-4', 5, 'TE Connectivity']);
+});
 t('accepts <GS> text markers and plain part numbers', () => {
   assert.strictEqual(S.parseLabel_('[)>\x1e06<GS>1PABC123<GS>Q5').mpn, 'ABC123');
   const p = S.parseLabel_('  AC0402FR-072K2L ');

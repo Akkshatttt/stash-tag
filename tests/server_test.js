@@ -63,6 +63,8 @@ const base = bigReads();
 let s = S.invCall(T, { action: 'scan', text: 'AC0402FR-072K2L' });
 assert.strictEqual(s.rec.category, 'Resistors'); assert.strictEqual(s.source, 'DigiKey');
 const calls1 = dkCalls;
+const mz = S.invCall(T, { action: 'scan', text: '[)>06K3999721814K001POEPS070090 #IA-1265Q1951VHirose' });
+assert.strictEqual(mz.rec, null); assert.ok(/no part number/.test(mz.warnings[0]) && /Hirose/.test(mz.warnings[0]), 'Mouser 2D code: clear message, customer PN not searched'); assert.strictEqual(dkCalls, calls1);
 s = S.invCall(T, { action: 'scan', text: 'AC0402FR-072K2L' });
 assert.strictEqual(dkCalls, calls1, 'second scan comes from CacheService'); assert.strictEqual(s.source, 'cache');
 s = S.invCall(T, { action: 'scan', text: 'YAG3467CT-ND' });

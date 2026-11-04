@@ -2,6 +2,11 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.1.1 (unreleased)
+- Parser checked against real DigiKey and Mouser label strings (samples/NOTES.md, not committed). A Mouser 2D code has no part number: the customer part number in `P` is no longer searched and the app says so. `P` counts as a supplier PN only when it looks like one. A stray prefix before `[)>` (Mouser `>[)>06`) is ignored.
+- Photo decode tries Data Matrix alone first, then the 1D formats, so a 1D bar on the label cannot win.
+- The not-found card shows the decoded text, parsed fields and the number searched.
+
 ## 0.1.0 (2026-11-04)
 Run `setup()` once in the editor, then add the Script properties listed in the README.
 - **New:** one sheet per category (Resistors, Capacitors, Inductors, Power ICs, Transceivers, Misc) plus `Log` and a hidden `Cache`.

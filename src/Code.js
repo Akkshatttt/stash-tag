@@ -35,7 +35,9 @@ function invCall(token, req) {
 /** Parse the scanned text and look the part up (cache, then APIs). Writes nothing but the product cache. The page knows what is already stocked. */
 function scan_(ss, text) {
   var parsed = parseLabel_(text);
-  if (!parsed.mpn && !parsed.supplierPn) return { parsed: parsed, rec: null, warnings: ['Nothing readable in that scan. Type the part number instead.'] };
+  if (!parsed.mpn && !parsed.supplierPn) return { parsed: parsed, rec: null, warnings: [parsed.fields && (parsed.fields.Q || parsed.fields['1V'])
+    ? 'This 2D code has no part number (Mouser labels never do). Scan the part-number barcode on the label, or type the part number.' + (parsed.fields['1V'] ? ' Manufacturer: ' + parsed.fields['1V'] + '.' : '')
+    : 'Nothing readable in that scan. Type the part number instead.'] };
   var found = lookupPart_(parsed, function (keys) { return productGet_(ss, keys); }, function (rec, queried) { productPut_(ss, rec, queried); });
   return { parsed: parsed, rec: found.rec, source: found.source, warnings: found.warnings };
 }

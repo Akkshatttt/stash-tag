@@ -55,10 +55,11 @@ assert.strictEqual(p.calls[2].action, 'confirm'); assert.strictEqual(p.calls[2].
 assert.ok(/Updated: 2.2k 0402/.test(p.text()) && /now 125/.test(p.text()));
 
 // not found
-p = openPage({ load: { rows: [] }, scan: { parsed: {}, rec: null, warnings: ['Mouser key missing'] } });
+p = openPage({ load: { rows: [] }, scan: { parsed: { raw: '[)>\x1e06\x1d1PABC', fields: { '1P': 'ABC' }, mpn: 'ABC' }, rec: null, warnings: ['Mouser key missing'] } });
 p.byId.app.find(e => e.tagName === undefined && e.textContent === 'Look up')[0];
 inputs()[0].value = 'ZZZ'; inputs()[0].fire('input'); p.byId.app.find(e => e.textContent === 'Look up')[0].click();
 assert.ok(/Part not found/.test(p.text()) && /Mouser key missing/.test(p.text()));
+assert.ok(/Decoded: \[\)><RS>06<GS>1PABC/.test(p.text()) && /searched: ABC/.test(p.text()));
 
 // search tab: filtered in the page, no server call after the first load
 p = openPage({ load: { rows: [row, Object.assign({}, row, { value: '10k', mpns: 'OTHER', description: 'RES 10K' })] } });
