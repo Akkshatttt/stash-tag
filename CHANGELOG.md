@@ -2,6 +2,9 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.3.0 (unreleased)
+- **New:** Search tab sorting like the distributor sites: sort by category, value (by size, so 100nF < 1uF < 4.7uF), package, quantity, location, part number or updated, ascending or descending, plus a category filter and a result count. Runs in the page; no server call.
+
 ## 0.2.0 (unreleased)
 - **New:** Live scan button (camera overlay): reads frames, looks the part up, shows a popup with the detected part and asks before it opens the normal part card. Separate from the photo button.
 - **Changed:** photo and live decoding now use zxing-wasm (CDN) and read every barcode in the picture at full resolution, so a whole-packet photo works; the old ZXing-js code stays as a fallback. The server takes all barcodes of a label (`texts`) and fills a missing part number from the 1D bars (Mouser prints one per field).

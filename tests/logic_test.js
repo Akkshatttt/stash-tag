@@ -58,6 +58,18 @@ t('several barcodes from one photo merge into one label (Mouser prints one 1D ba
   assert.strictEqual(p.mpn, 'AC0402FR-072K2L');
   assert.strictEqual(S.parseLabel_('[)>␞06␝PQ1045-ND␝1P364019-01␝K12432␠TRAVIS␠FOSS␝Q3').fields.K, '12432 TRAVIS FOSS', 'zxing-wasm control-char symbols');
 });
+t('sortRows_: value by size, empty last, qty both ways, relevance keeps order', () => {
+  const rows = [{ category: 'Capacitors', value: '1uF', qty: 5, mpns: 'B' }, { category: 'Capacitors', value: '100nF', qty: 50, mpns: 'A' }, { category: 'Resistors', value: '2.2k', qty: 7, mpns: 'C' },
+    { category: 'Power ICs', value: '', qty: 1, mpns: 'D' }, { category: 'Resistors', value: '1M', qty: 9, mpns: 'E' }, { category: 'Capacitors', value: '4.7uF', qty: 2, mpns: 'F' }];
+  const ids = (k, d) => S.sortRows_(rows, k, d).map(r => r.mpns).join('');
+  assert.strictEqual(ids('', 'desc'), 'BACDEF', 'relevance keeps order');
+  assert.strictEqual(ids('value', 'asc'), 'ABFCED', '100nF < 1uF < 4.7uF < 2.2k < 1M, empty last');
+  assert.strictEqual(ids('value', 'desc'), 'ECFBAD', 'empty stays last when descending');
+  assert.strictEqual(ids('qty', 'desc'), 'AECBFD', 'qty high to low');
+  assert.strictEqual(ids('qty', 'asc'), 'DFBCEA');
+  assert.strictEqual(ids('category', 'asc'), 'ABFDCE', 'category, ties by value then part');
+  assert.strictEqual(rows[0].mpns, 'B', 'input not mutated');
+});
 t('accepts <GS> text markers and plain part numbers', () => {
   assert.strictEqual(S.parseLabel_('[)>\x1e06<GS>1PABC123<GS>Q5').mpn, 'ABC123');
   const p = S.parseLabel_('  AC0402FR-072K2L ');

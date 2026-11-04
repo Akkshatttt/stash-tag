@@ -1,6 +1,6 @@
 {
   "name": "stash-tag",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Electronics inventory (DigiKey/Mouser) in Google Sheets with a phone web app. Apps Script.",
   "scripts": {
