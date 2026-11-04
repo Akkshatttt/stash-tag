@@ -2,7 +2,12 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
-## 0.1.1 (unreleased)
+## 0.2.0 (unreleased)
+- **New:** Live scan button (camera overlay): reads frames, looks the part up, shows a popup with the detected part and asks before it opens the normal part card. Separate from the photo button.
+- **Changed:** photo and live decoding now use zxing-wasm (CDN) and read every barcode in the picture at full resolution, so a whole-packet photo works; the old ZXing-js code stays as a fallback. The server takes all barcodes of a label (`texts`) and fills a missing part number from the 1D bars (Mouser prints one per field).
+- **Fixed:** a full, un-zoomed DigiKey bag photo decodes (tested on real photos in `samples/`).
+
+## 0.1.1
 - Parser checked against real DigiKey and Mouser label strings (samples/NOTES.md, not committed). A Mouser 2D code has no part number: the customer part number in `P` is no longer searched and the app says so. `P` counts as a supplier PN only when it looks like one. A stray prefix before `[)>` (Mouser `>[)>06`) is ignored.
 - Photo decode tries Data Matrix alone first, then the 1D formats, so a 1D bar on the label cannot win.
 - The not-found card shows the decoded text, parsed fields and the number searched.

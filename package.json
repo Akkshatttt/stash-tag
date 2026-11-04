@@ -1,16 +1,19 @@
 {
   "name": "stash-tag",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Electronics inventory (DigiKey/Mouser) in Google Sheets with a phone web app. Apps Script.",
   "scripts": {
-    "test": "node tests/logic_test.js && node tests/server_test.js && node tests/page_test.js",
+    "test": "node tests/logic_test.js && node tests/server_test.js && node tests/page_test.js && node tests/decode_test.js",
     "push": "clasp push",
     "login": "clasp login",
     "release": "node tools/release.js",
     "keys": "node tools/copy_keys.js"
   },
   "devDependencies": {
-    "@google/clasp": "^3.4.1"
+    "@google/clasp": "^3.4.1",
+    "@zxing/library": "^0.21.3",
+    "jimp": "^1.6.1",
+    "zxing-wasm": "^3.1.6"
   }
 }

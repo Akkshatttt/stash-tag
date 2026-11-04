@@ -27,10 +27,15 @@ function openPage(answers) {
     .replace('<?!= JSON.stringify(token) ?>', '"tok"').replace('<?!= JSON.stringify(categories) ?>', '["Resistors","Capacitors","Misc"]');
   const byId = {};
   const calls = [];
-  const document = { createElement: t => new El(t), getElementById: id => (byId[id] = byId[id] || new El('div')) };
+  const document = { createElement: t => {
+    const e = new El(t);
+    if (t === 'video') Object.assign(e, { videoWidth: 640, videoHeight: 480, play() {} });
+    if (t === 'canvas') e.getContext = () => ({ drawImage() {}, getImageData: (x, y, w, h) => ({ width: w, height: h, data: [] }) });
+    return e;
+  },getElementById: id => (byId[id] = byId[id] || new El('div')) };
   const run = { withSuccessHandler(ok) { this.ok = ok; return this; }, withFailureHandler(f) { this.fail = f; return this; },
     invCall(token, req) { calls.push(JSON.parse(JSON.stringify(req))); const a = answers[req.action]; if (a instanceof Error) this.fail(a); else this.ok(a); } };
-  const ctx = vm.createContext({ document, google: { script: { run } }, ZXing: {}, URL, Image: function () {}, console });
+  const ctx = vm.createContext(Object.assign({ document, google: { script: { run } }, ZXing: {}, URL, Image: function () {}, console, setTimeout, Date }, answers.env));
   vm.runInContext(script, ctx);
   return { byId, calls, text: () => byId.app.textContent };
 }
@@ -73,4 +78,27 @@ inputs()[0].value = 'zzz'; inputs()[0].fire('input');
 assert.ok(/Nothing matched/.test(p.text()));
 p = openPage({ load: new Error('forbidden') });
 assert.ok(/Error: forbidden/.test(p.text()));
-console.log('page ok');
+
+// two separate scan buttons; live scan: blocked camera, then detect -> popup -> confirm -> normal part card
+p = openPage({ load: { rows: [] } });
+assert.ok(p.byId.app.find(e => e.textContent === 'Scan label (take photo)').length && p.byId.app.find(e => e.textContent === 'Live scan (camera)').length, 'photo and live buttons are separate');
+p = openPage({ load: { rows: [] }, env: { navigator: { mediaDevices: { getUserMedia: () => Promise.reject({ name: 'NotAllowedError', message: 'denied' }) } } } });
+p.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  await sleep(10);
+  assert.ok(/live camera blocked \(NotAllowedError: denied\)/.test(p.text()) && /photo button/.test(p.text()), 'blocked camera says why and points to the photo button');
+  let stopped = 0;
+  const wasm = { readBarcodes: () => Promise.resolve([{ text: '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50', format: 'DataMatrix', isValid: true }]) };
+  p = openPage({ load: { rows: [] }, scan: { parsed: { qty: 50, lot: '' }, rec, source: 'DigiKey', warnings: [] }, confirm: { row, isNew: false },
+    env: { ZXingWASM: wasm, navigator: { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: () => stopped++ }] }) } } } });
+  p.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+  await sleep(1500);
+  const live = p.byId.live;
+  assert.ok(/Part detected/.test(live.textContent) && /AC0402FR-072K2L/.test(live.textContent) && /Quantity on label: 50/.test(live.textContent), 'popup shows the detected part');
+  assert.deepStrictEqual(p.calls[1].texts, ['[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50'], 'live scan sends every barcode read');
+  live.find(e => e.textContent === 'Use this part')[0].click();
+  assert.strictEqual(stopped, 1, 'camera stopped'); assert.strictEqual(live.style.display, 'none');
+  assert.ok(/Add to stock/.test(p.text()) && /AC0402FR-072K2L/.test(p.text()), 'normal part card follows');
+  console.log('page ok');
+})().catch(e => { console.error(e); process.exit(1); });
