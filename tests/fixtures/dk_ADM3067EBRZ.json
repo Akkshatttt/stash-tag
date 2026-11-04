@@ -1,0 +1,229 @@
+{
+ "SearchLocaleUsed": {
+  "Site": "IN",
+  "Language": "en",
+  "Currency": "INR"
+ },
+ "Product": {
+  "Description": {
+   "ProductDescription": "IC TXRX 14-SOIC",
+   "DetailedDescription": "1/1 Transceiver Full RS485 14-SOIC"
+  },
+  "Manufacturer": {
+   "Id": 505,
+   "Name": "Analog Devices Inc."
+  },
+  "ManufacturerProductNumber": "ADM3067EBRZ",
+  "UnitPrice": 578.27,
+  "ProductUrl": "https://www.digikey.in/en/products/detail/analog-devices-inc/ADM3067EBRZ/9996935",
+  "DatasheetUrl": "https://www.analog.com/media/en/technical-documentation/data-sheets/adm3061e-3062e-3063e-3064e-3065e-3066e-3067e-3068e.pdf",
+  "PhotoUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/medias/images/4994/505%7ER-14%7ER%7E14.JPG",
+  "ProductVariations": [
+   {
+    "DigiKeyProductNumber": "ADM3067EBRZ-ND",
+    "PackageType": {
+     "Id": 6,
+     "Name": "Tube"
+    },
+    "StandardPricing": [
+     {
+      "BreakQuantity": 1,
+      "UnitPrice": 578.27,
+      "TotalPrice": 578.27
+     },
+     {
+      "BreakQuantity": 10,
+      "UnitPrice": 442.832,
+      "TotalPrice": 4428.32
+     },
+     {
+      "BreakQuantity": 56,
+      "UnitPrice": 385.73893,
+      "TotalPrice": 21601.38008
+     },
+     {
+      "BreakQuantity": 112,
+      "UnitPrice": 369.49384,
+      "TotalPrice": 41383.31008
+     },
+     {
+      "BreakQuantity": 280,
+      "UnitPrice": 352.35539,
+      "TotalPrice": 98659.5092
+     },
+     {
+      "BreakQuantity": 504,
+      "UnitPrice": 343.46599,
+      "TotalPrice": 173106.85896
+     },
+     {
+      "BreakQuantity": 1008,
+      "UnitPrice": 334.70889,
+      "TotalPrice": 337386.56112
+     },
+     {
+      "BreakQuantity": 2520,
+      "UnitPrice": 325.46265,
+      "TotalPrice": 820165.878
+     }
+    ],
+    "MyPricing": [],
+    "MarketPlace": false,
+    "TariffActive": false,
+    "Supplier": {
+     "Id": 505,
+     "Name": "Analog Devices Inc."
+    },
+    "QuantityAvailableforPackageType": 396,
+    "MaxQuantityForDistribution": 999999999,
+    "MinimumOrderQuantity": 1,
+    "StandardPackage": 56,
+    "DigiReelFee": 0.0
+   }
+  ],
+  "QuantityAvailable": 396,
+  "ProductStatus": {
+   "Id": 0,
+   "Status": "Active"
+  },
+  "BackOrderNotAllowed": false,
+  "NormallyStocking": true,
+  "Discontinued": false,
+  "EndOfLife": false,
+  "Ncnr": false,
+  "PrimaryVideoUrl": "https://www.digikey.com/api/videos/videoplayer/smallplayer/6359991626112",
+  "Parameters": [
+   {
+    "ParameterId": 183,
+    "ParameterText": "Type",
+    "ParameterType": "String",
+    "ValueId": "415534",
+    "ValueText": "Transceiver"
+   },
+   {
+    "ParameterId": 578,
+    "ParameterText": "Protocol",
+    "ParameterType": "String",
+    "ValueId": "399058",
+    "ValueText": "RS485"
+   },
+   {
+    "ParameterId": 404,
+    "ParameterText": "Number of Drivers/Receivers",
+    "ParameterType": "String",
+    "ValueId": "63111",
+    "ValueText": "1/1"
+   },
+   {
+    "ParameterId": 1684,
+    "ParameterText": "Duplex",
+    "ParameterType": "String",
+    "ValueId": "349685",
+    "ValueText": "Full"
+   },
+   {
+    "ParameterId": 1683,
+    "ParameterText": "Receiver Hysteresis",
+    "ParameterType": "UnitOfMeasure",
+    "ValueId": "30 mV",
+    "ValueText": "30 mV"
+   },
+   {
+    "ParameterId": 448,
+    "ParameterText": "Data Rate",
+    "ParameterType": "String",
+    "ValueId": "238189",
+    "ValueText": "50Mbps"
+   },
+   {
+    "ParameterId": 276,
+    "ParameterText": "Voltage - Supply",
+    "ParameterType": "String",
+    "ValueId": "202873",
+    "ValueText": "3V ~ 5.5V"
+   },
+   {
+    "ParameterId": 252,
+    "ParameterText": "Operating Temperature",
+    "ParameterType": "String",
+    "ValueId": "212478",
+    "ValueText": "-40\u00b0C ~ 125\u00b0C"
+   },
+   {
+    "ParameterId": 69,
+    "ParameterText": "Mounting Type",
+    "ParameterType": "String",
+    "ValueId": "409393",
+    "ValueText": "Surface Mount"
+   },
+   {
+    "ParameterId": 16,
+    "ParameterText": "Package / Case",
+    "ParameterType": "String",
+    "ValueId": "97323",
+    "ValueText": "14-SOIC (0.154\", 3.90mm Width)"
+   },
+   {
+    "ParameterId": 1291,
+    "ParameterText": "Supplier Device Package",
+    "ParameterType": "String",
+    "ValueId": "97322",
+    "ValueText": "14-SOIC"
+   }
+  ],
+  "BaseProductNumber": {
+   "Id": 301049,
+   "Name": "ADM3067"
+  },
+  "Category": {
+   "CategoryId": 32,
+   "ParentId": 0,
+   "Name": "Integrated Circuits (ICs)",
+   "ProductCount": 0,
+   "NewProductCount": 0,
+   "ImageUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/derivates/3/010/153/598/8-SOIC%2CM8_tmb.jpg",
+   "SeoDescription": "Integrated circuits combine a large number of transistors and other elementary electronic components in miniaturized form into a single physical device, that is designed for a specific purpose or function and characterized by its performance of that function rather than by the behavior of its component pieces. Examples include microcontrollers, battery monitors and charge controllers, analog to digital converters, operational amplifiers, logic gates, voltage regulators, gate drivers, motro controllers, and others.",
+   "ChildCategories": [
+    {
+     "CategoryId": 2016,
+     "ParentId": 32,
+     "Name": "Interface",
+     "ProductCount": 0,
+     "NewProductCount": 0,
+     "ImageUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/derivates/3/003/236/976/175-16-QSOP_tmb%2864x64%29.jpg",
+     "SeoDescription": "Interface components are used to connect various signals or data transmission. Included in this category are analog switches, multiplexers, demultiplexers, CODECs, controllers for communication protocols, direct digital synthesis (DDS), drivers, receivers, transceivers, encoders, decoders, filters, I/O expanders, modems, modules, sensor and detectors, capacitive touch, serializers, deserializers, signal buffers, repeaters, splitters, signal terminators, telecom, universal asynchronous receiver/transmitter (UARTs), voice record and playback, and various boards and specialized products.",
+     "ChildCategories": [
+      {
+       "CategoryId": 710,
+       "ParentId": 2016,
+       "Name": "Drivers, Receivers, Transceivers",
+       "ProductCount": 0,
+       "NewProductCount": 0,
+       "ImageUrl": "https://mm.digikey.com/Volume0/opasdata/d220001/derivates/3/003/109/446/BCM5464SA1xRBG_tmb%2864x64%29.jpg",
+       "SeoDescription": "Products in this family function chiefly to provide the hardware resources necessary for communication over extended cable or trace lengths. Exact functionality varies with the communications protocol employed, and may include things such as transient suppression which may not be strictly necessary for communications purposes but are highly advisable in likely use contexts.",
+       "ChildCategories": []
+      }
+     ]
+    }
+   ]
+  },
+  "ManufacturerLeadWeeks": "10",
+  "ManufacturerPublicQuantity": 0,
+  "Series": {
+   "Id": 818,
+   "Name": "-"
+  },
+  "Classifications": {
+   "ReachStatus": "REACH Unaffected",
+   "RohsStatus": "ROHS3 Compliant",
+   "MoistureSensitivityLevel": "1  (Unlimited)",
+   "ExportControlClassNumber": "5A991B1",
+   "HtsusCode": "8542.39.0070"
+  },
+  "OtherNames": [
+   "-2735-ADM3067EBRZ"
+  ]
+ },
+ "AccountIdUsed": 0,
+ "CustomerIdUsed": 0
+}
