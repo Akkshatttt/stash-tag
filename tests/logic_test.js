@@ -47,6 +47,17 @@ t('real Mouser 2D labels carry no part number; customer PN is never searched', (
   p = S.parseLabel_(real('>[)>06<gs>K10033990<gs>14K008<gs>1P929974-4<gs>Q5<gs>11K052636800<gs>4LDE<gs>1VTE Connectivity'));   // stray ">" and no RS
   assert.deepStrictEqual([p.mpn, p.qty, p.manufacturer], ['929974-4', 5, 'TE Connectivity']);
 });
+t('several barcodes from one photo merge into one label (Mouser prints one 1D bar per field)', () => {
+  const two = real('[)><rs>06<gs>K11672779<gs>14K015<gs>Q4<gs>11K043415811<gs>4LUS<gs>1VVishay<rs><eot>');   // 2D without a part number
+  const bars = ['11672779', '015', '71-RN60D-F-392', 'RN60D3920FB14', '4', 'US', '043415811'];
+  let p = S.mergeLabels_([two].concat(bars));
+  assert.deepStrictEqual([p.supplierPn, p.mpn, p.supplier, p.qty, p.manufacturer], ['71-RN60D-F-392', 'RN60D3920FB14', 'Mouser', 4, 'Vishay']);
+  p = S.mergeLabels_(['004783209', real('[)><rs>06<gs>PC1<gs>1P860010672008<gs>30P732-8660-1-ND<gs>Q1')]);   // DigiKey: oLPN bar is ignored
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.alts.length], ['860010672008', '732-8660-1-ND', 0]);
+  p = S.mergeLabels_(['AC0402FR-072K2L']);   // one plain barcode = typed part number
+  assert.strictEqual(p.mpn, 'AC0402FR-072K2L');
+  assert.strictEqual(S.parseLabel_('[)>␞06␝PQ1045-ND␝1P364019-01␝K12432␠TRAVIS␠FOSS␝Q3').fields.K, '12432 TRAVIS FOSS', 'zxing-wasm control-char symbols');
+});
 t('accepts <GS> text markers and plain part numbers', () => {
   assert.strictEqual(S.parseLabel_('[)>\x1e06<GS>1PABC123<GS>Q5').mpn, 'ABC123');
   const p = S.parseLabel_('  AC0402FR-072K2L ');

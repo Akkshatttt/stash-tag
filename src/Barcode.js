@@ -7,7 +7,7 @@ var GS = '\x1d', RS = '\x1e';
 
 function parseLabel_(text) {
   var raw = String(text == null ? '' : text);
-  raw = raw.replace(/<GS>|\{GS\}|\\x1d|\\u001d|␝/gi, GS).replace(/<RS>|\{RS\}|\\x1e|␞/gi, RS).replace(/<EOT>|\x04/gi, '');
+  raw = raw.replace(/<GS>|\{GS\}|\\x1d|\\u001d|␝/gi, GS).replace(/<RS>|\{RS\}|\\x1e|␞/gi, RS).replace(/<EOT>|\x04|␄/gi, '').replace(/␠/g, ' ');   // zxing-wasm prints control chars as symbols
   var out = { raw: raw, fields: {}, mpn: '', supplierPn: '', supplier: '', qty: 0, lot: '', dateCode: '', manufacturer: '' };
   var t = squash(raw.replace(/[\x1d\x1e]/g, ' '));
   if (!t) return out;
@@ -41,4 +41,25 @@ function looksLikeSupplierPn_(s) { return /-ND$/i.test(s || '') || /^\d{2,3}-\S+
 function guessSupplier_(out, pn) {
   if (/-ND$/i.test(pn) || out.fields['30P']) out.supplier = 'DigiKey';
   else if (/^\d{2,3}-\S+/.test(pn)) out.supplier = 'Mouser';
+}
+
+/** Several barcodes from one photo or video frame -> one parsed label. The 2D code (starts with "[)>") gives the fields; the bare 1D texts fill in
+ *  a missing part number: Mouser prints one 1D bar per field (PO, line, Mouser PN, MFG PN, qty, country, invoice) and its 2D code may lack the PN. */
+function mergeLabels_(texts) {
+  texts = (texts || []).map(function (t) { return String(t == null ? '' : t); }).filter(squash);
+  var two = texts.filter(function (t) { return t.indexOf('[)>') >= 0; }), one = texts.filter(function (t) { return t.indexOf('[)>') < 0; });
+  var out = parseLabel_(two[0] || (one.length === 1 ? one[0] : ''));
+  if (!two.length && one.length === 1) return out;   // a single plain barcode: already handled as a typed part number
+  var skip = {};
+  Object.keys(out.fields).forEach(function (k) { skip[out.fields[k]] = 1; });
+  var alts = [];
+  one.map(squash).forEach(function (t) {
+    if (!t || skip[t] || /^\d+$/.test(t) || t.length < 3 || /\s/.test(t) && t.length > 40) return;   // order/line/qty/invoice digits, country codes
+    if (/^\d{2,3}-\S+/.test(t) && !out.supplierPn) { out.supplierPn = t; out.supplier = out.supplier || 'Mouser'; }
+    else if (/[A-Za-z]/.test(t) && /\d/.test(t) && !out.mpn) out.mpn = t;
+    else alts.push(t);
+  });
+  out.alts = alts.slice(0, 2);
+  if (!out.supplier) guessSupplier_(out, out.supplierPn || out.mpn);
+  return out;
 }
