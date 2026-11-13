@@ -30,6 +30,14 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
 
   r = await call({ token: 'tok', req: { action: 'load' } });
   assert.deepStrictEqual(r.body, { ok: true, data: { rows: [] } }); assert.strictEqual(sent.length, 1, 'load goes to Apps Script');
+  env.PASSWORD = 'pw';   // admin password set: only the password works, the token alone is refused
+  r = await call({ token: 'tok', req: { action: 'load' } });
+  assert.strictEqual(r.status, 403, 'token alone refused once PASSWORD is set');
+  r = await call({ password: 'nope', req: { action: 'load' } });
+  assert.strictEqual(r.status, 403); assert.strictEqual(sent.length, 1, 'wrong password stops here');
+  r = await call({ password: 'pw', req: { action: 'load' } });
+  assert.strictEqual(r.body.ok, true); assert.deepStrictEqual(sent.pop(), { token: 'tok', req: { action: 'load' } }, 'password swapped for the token, never forwarded');
+  delete env.PASSWORD;
 
   const rec = { mpn: 'AC0402FR-072K2L', dkPn: '311-2.20KLRCT-ND', mouserPn: '', groupKey: 'R|2.2k|0402' };
   answer = () => ({ ok: true, data: { parsed: { qty: 5 }, rec, source: 'DigiKey', warnings: [] } });

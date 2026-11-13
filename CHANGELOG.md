@@ -2,7 +2,10 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
-## 0.4.0 (unreleased)
+## 0.5.0 (unreleased)
+- **New:** shared admin password for the Cloudflare page. With the Pages secret `PASSWORD` set, the page shows a sign-in card and `/api` accepts only that password (compared in constant time); the Function swaps it for the Apps Script token, which never reaches the phone. A wrong or changed password signs the browser out and clears its stored inventory. Without `PASSWORD` the `#t=` token works as before.
+
+## 0.4.0
 - **New:** the page can be served as a static site on Cloudflare Pages (`node tools/build_web.js` builds `web/index.html`), so it opens in well under a second instead of 3-6 s. It talks to `/api`, a Pages Function (`functions/api.js`) that forwards to the Apps Script `doPost`. The Apps Script page keeps working.
 - **New:** central part cache in Cloudflare D1 (SQLite): a scan of a part already seen is answered by the Pages Function without calling Google or the suppliers. New parts are stored there under every part number they have.
 - **New:** the page keeps the last inventory in localStorage, so Search works at once on open.

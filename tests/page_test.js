@@ -41,7 +41,7 @@ function openPage(answers) {
     const ls = answers.static.ls || {};
     Object.assign(ctx, { location: { hash: answers.static.hash || '', pathname: '/' }, history: { replaceState() { ctx.location.hash = ''; } },
       localStorage: { getItem: k => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); } },
-      fetch: (url, o) => { const b = JSON.parse(o.body); calls.push(b.req); fetched.push({ url, token: b.token });
+      fetch: (url, o) => { const b = JSON.parse(o.body); calls.push(b.req); fetched.push(Object.assign({ url, token: b.token }, b.password ? { password: b.password } : {}));
         const a = answers[b.req.action]; return Promise.resolve({ json: () => Promise.resolve(a instanceof Error ? { ok: false, error: a.message } : { ok: true, data: a }) }); } });
   }
   const fetched = [];
@@ -125,8 +125,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   p = openPage({ static: { ls: { token: '"abc"' } }, load: { rows: [] } });
   await sleep(10);
   assert.strictEqual(p.fetched[0].token, 'abc', 'token remembered from localStorage');
-  p = openPage({ static: {}, load: { rows: [] } });
-  assert.ok(/no access token/.test(p.text()) && !p.calls.length);
+  // no token, no password: sign-in card, no server call; password goes with every call; a forbidden answer signs out
+  const ls2 = {};
+  p = openPage({ static: { ls: ls2 }, load: { rows: [row] } });
+  assert.ok(/Sign in/.test(p.text()) && !p.calls.length && !/Add to stock|Scan label/.test(p.text()));
+  const pw = p.byId.app.find(e => e.type === 'password')[0];
+  pw.value = 'secret'; p.byId.app.find(e => e.textContent === 'Sign in' && e.tag === 'button')[0].click();
+  await sleep(10);
+  assert.deepStrictEqual(p.fetched[0], { url: '/api', token: '', password: 'secret' }); assert.strictEqual(JSON.parse(ls2.pass), 'secret');
+  assert.ok(/Scan label/.test(p.text()), 'app shows after sign-in');
+  p = openPage({ static: { ls: { pass: '"old"', inv: JSON.stringify([row]) } }, load: new Error('forbidden') });
+  await sleep(10);
+  assert.ok(/wrong password/.test(p.text()) && /Sign in/.test(p.text()));
+  p.byId.t2.click(); assert.ok(!/2.2k 0402/.test(p.text()), 'stored inventory hidden after sign-out');
   const built = require('../tools/build_web').buildWeb();
   assert.ok(!/<\?/.test(built) && /function partKeys_/.test(built), 'build fills every template tag');
 

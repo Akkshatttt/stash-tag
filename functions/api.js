@@ -14,11 +14,22 @@ async function forward(env, body) {
   try { return JSON.parse(text); } catch (e) { return { ok: false, error: 'Apps Script answered ' + r.status + ' (not JSON)' }; }
 }
 
+// Constant-time string compare (hash both sides so lengths match).
+async function same(a, b) {
+  const h = async s => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s))));
+  const [x, y] = await Promise.all([h(a), h(b)]);
+  return crypto.subtle.timingSafeEqual ? crypto.subtle.timingSafeEqual(x, y) : x.every((v, i) => v === y[i]);
+}
+
 export async function onRequestPost({ request, env, waitUntil }) {
   let body;
   try { body = await request.json(); } catch (e) { return reply({ ok: false, error: 'bad request' }, 400); }
-  if (!env.TOKEN || body.token !== env.TOKEN) return reply({ ok: false, error: 'forbidden' }, 403);
+  // With the secret PASSWORD set, only the shared admin password unlocks the API (a saved #t= token no longer does); without it, the token.
+  // The token is what goes on to Apps Script. ponytail: one shared password, no rate limit on wrong guesses; per-user logins come later.
+  const allowed = env.TOKEN && (env.PASSWORD ? body.password && await same(body.password, env.PASSWORD) : body.token && await same(body.token, env.TOKEN));
+  if (!allowed) return reply({ ok: false, error: 'forbidden' }, 403);
   const req = body.req || {};
+  body = { token: env.TOKEN, req };
   if (req.action !== 'scan' || !Array.isArray(req.keys) || !req.keys.length) return reply(await forward(env, body));
 
   const keys = req.keys.map(normPn).filter(Boolean).slice(0, 20);
