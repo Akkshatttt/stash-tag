@@ -31,10 +31,31 @@
 var TOKEN = <?!= JSON.stringify(token) ?>;
 var CATEGORIES = <?!= JSON.stringify(categories) ?>;
 var tab = 'add', busy = false;
+// Same page on two hosts: inside Apps Script (google.script.run) or static on Cloudflare Pages (fetch /api, token from #t= then localStorage).
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+var GAS = typeof google !== 'undefined' && google.script;
+if (!GAS) {
+  var h = /[#&]t=([^&]+)/.exec(location.hash || '');
+  if (h) { TOKEN = decodeURIComponent(h[1]); store('token', TOKEN); try { history.replaceState(null, '', location.pathname); } catch (e) { /* keep the hash */ } }
+  TOKEN = TOKEN || store('token') || '';
+}
+function invoke(req, ok, fail) {
+  if (GAS) return google.script.run.withSuccessHandler(ok).withFailureHandler(fail).invCall(TOKEN, req);
+  fetch('/api', { method: 'POST', body: JSON.stringify({ token: TOKEN, req: req }) })
+    .then(function (r) { return r.json(); })
+    .then(function (b) { if (b.ok) ok(b.data); else fail(new Error(b.error)); }, fail);
+}
+function scanReq(text) {   // typed string or barcode list -> scan request with the part-cache keys (the cloud cache answers without Google)
+  var texts = [].concat(text);
+  return { action: 'scan', texts: texts, keys: partKeys_(mergeLabels_(texts)).keys };
+}
+function fillParsed(r, req) { if (!r.parsed) r.parsed = mergeLabels_(req.texts); return r; }   // a cloud-cache hit sends only the record
 // The whole inventory is fetched once (background) and searched here, so Search and the 'already in stock' hint cost no server call.
+// The last copy is kept in localStorage so Search works at once on open; the fresh load replaces it.
 function loadInv() {
-  google.script.run.withSuccessHandler(function (r) { st.inv = r.rows; render(); })
-    .withFailureHandler(function (e) { st.msg = 'Error: ' + (e && e.message || e); render(); }).invCall(TOKEN, { action: 'load' });
+  if (!TOKEN) { st.msg = 'Error: no access token. Open the link that ends in #t=...'; return render(); }
+  invoke({ action: 'load' }, function (r) { st.inv = r.rows; store('inv', st.inv); render(); },
+    function (e) { st.msg = 'Error: ' + (e && e.message || e); render(); });
 }
 function stocked(rec) { return (st.inv || []).filter(function (r) { return r.category === rec.category && r.groupKey === rec.groupKey; })[0] || null; }
 var st = { scan: null, msg: '', inv: null };       // last server answers
@@ -55,10 +76,8 @@ function field(label, key, props) {
 function call(req, cb) {
   if (busy) return;
   busy = true; st.msg = ''; render();
-  google.script.run
-    .withSuccessHandler(function (r) { busy = false; cb(r); render(); })
-    .withFailureHandler(function (e) { busy = false; st.msg = 'Error: ' + (e && e.message || e); render(); })
-    .invCall(TOKEN, req);
+  invoke(req, function (r) { busy = false; cb(r); render(); },
+    function (e) { busy = false; st.msg = 'Error: ' + (e && e.message || e); render(); });
 }
 
 // ---- barcode decoding. zxing-wasm (CDN) does the work: perspective, glare, several symbols per photo, full resolution. ZXing-js passes in
@@ -91,9 +110,9 @@ function applyScan(r) {   // a scan answer becomes the part card (typed, photo a
   if (r.rec) { ui.qty = r.parsed.qty ? String(r.parsed.qty) : ''; var ex = stocked(r.rec); ui.location = (ex && ex.location.split(' / ')[0]) || ''; ui.category = r.rec.category; ui.lot = r.parsed.lot || ''; }
 }
 function doScan(text) {   // text: typed string, or the array of every barcode read from a photo
-  var many = Array.isArray(text);
-  ui.text = many ? '' : text; ui.qty = ''; ui.location = ''; ui.lot = '';
-  call(many ? { action: 'scan', texts: text } : { action: 'scan', text: text }, applyScan);
+  ui.text = Array.isArray(text) ? '' : text; ui.qty = ''; ui.location = ''; ui.lot = '';
+  var req = scanReq(text);
+  call(req, function (r) { applyScan(fillParsed(r, req)); });
 }
 
 // ---- live camera: a full-screen overlay reads frames until a part resolves, then asks the user to confirm before the normal part card shows.
@@ -135,9 +154,10 @@ function liveTick() {
 function liveAsk(next) {
   var l = live, texts = Object.keys(l.seen);
   l.asking = true; l.status.textContent = 'Read ' + texts.length + ' barcode(s). Looking up...';
-  google.script.run.withSuccessHandler(function (r) {
+  var req = scanReq(texts);
+  invoke(req, function (r) {
     if (!live || live.stop) return;
-    l.asking = false;
+    l.asking = false; fillParsed(r, req);
     if (!r.rec) { liveReset('Read ' + texts.length + ' barcode(s), no part found' + (r.warnings && r.warnings[0] ? ': ' + r.warnings[0] : '') + '. Keep aiming.'); return next(); }
     l.paused = true; l.status.textContent = 'Part detected.';
     var use = el('button', { className: 'primary', text: 'Use this part' }), no = el('button', { className: 'sec', text: 'Not this one' });
@@ -147,13 +167,14 @@ function liveAsk(next) {
     l.popup.appendChild(el('div', { className: 'card' }, [el('div', { className: 'big', text: r.rec.mpn }),
       el('div', { className: 'small', text: [r.rec.manufacturer, r.rec.supplier, r.rec.dkPn || r.rec.mouserPn].filter(Boolean).join(' · ') }),
       el('div', { text: r.rec.description }), r.parsed && r.parsed.qty ? el('div', { className: 'small', text: 'Quantity on label: ' + r.parsed.qty }) : null, use, no]));
-  }).withFailureHandler(function (e) { if (!live) return; liveReset('Error: ' + (e && e.message || e)); next(); }).invCall(TOKEN, { action: 'scan', texts: texts });
+  }, function (e) { if (!live) return; liveReset('Error: ' + (e && e.message || e)); next(); });
 }
 
 function patchInv(row) {
   if (!st.inv) return;
   var i = st.inv.findIndex(function (x) { return x.category === row.category && x.groupKey === row.groupKey; });
   if (i >= 0) st.inv[i] = row; else st.inv.push(row);
+  store('inv', st.inv);
 }
 
 function stockLine(r) {
@@ -259,6 +280,7 @@ function render() {
   app.appendChild(tab === 'add' ? addView() : searchView());
 }
 var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
+st.inv = store('inv');
 loadInv();
 t1.onclick = function () { tab = 'add'; render(); };
 t2.onclick = function () { tab = 'search'; render(); };

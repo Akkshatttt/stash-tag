@@ -16,9 +16,18 @@ function doGet(e) {
 
 /** The pure search code, copied into the page so typing in Search needs no server call (one source of truth, also tested in Node). */
 function clientLib_() {
-  var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM };
+  var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM, GS: GS, RS: RS };
   return Object.keys(vars).map(function (n) { return 'var ' + n + '=' + JSON.stringify(vars[n]) + ';'; }).join('\n') + '\n' +
-    [squash, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_].map(String).join('\n');
+    [squash, normPn, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_,
+      parseLabel_, looksLikeSupplierPn_, guessSupplier_, mergeLabels_, partKeys_].map(String).join('\n');
+}
+
+/** JSON API for the static page (Cloudflare Pages forwards /api here). Body: {token, req} -> {ok, data} or {ok:false, error}. */
+function doPost(e) {
+  var out;
+  try { var b = JSON.parse(e.postData.contents); out = { ok: true, data: invCall(b.token, b.req || {}) }; }
+  catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Called by the page. Names ending in _ are hidden from the page. */

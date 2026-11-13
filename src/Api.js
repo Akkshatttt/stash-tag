@@ -73,13 +73,7 @@ function mouserLookup_(pn) {
 /** Cache first (by any of the label's part numbers), then the label's supplier, then the other. cacheGet(keys) -> rec|null; cachePut(rec, queriedPns).
  *  -> {rec, source, warnings}; rec null if nothing found. Only a cache miss costs an API call. */
 function lookupPart_(parsed, cacheGet, cachePut) {
-  var cands = [], seen = {};
-  var add = function (s, pn) { pn = squash(pn); var k = s + '|' + normPn(pn); if (pn && !seen[k]) { seen[k] = 1; cands.push({ supplier: s, pn: pn }); } };
-  var first = parsed.supplier || 'DigiKey', other = first === 'DigiKey' ? 'Mouser' : 'DigiKey';
-  add(first, parsed.supplierPn); add(first, parsed.mpn); add(other, parsed.mpn);
-  (parsed.alts || []).forEach(function (p) { add(first, p); add(other, p); });   // leftover 1D bars, tried last
-  var keys = [], warnings = [];
-  cands.forEach(function (c) { var k = normPn(c.pn); if (keys.indexOf(k) < 0) keys.push(k); });
+  var pk = partKeys_(parsed), cands = pk.cands, keys = pk.keys, warnings = [];
   var hit = cacheGet(keys);
   if (hit) return { rec: hit, source: 'cache', warnings: warnings };
   for (var i = 0; i < cands.length; i++) {

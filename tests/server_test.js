@@ -45,6 +45,7 @@ const S = loadSrc({
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   Utilities: { sleep() {}, getUuid: () => 'aaaa-bbbb', formatDate: () => '2026-11-04 10:00' },
   Logger: { log() {} },
+  ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ text: t, setMimeType() { return this; } }) },
   UrlFetchApp: { fetch: url => { dkCalls++; const body = url.includes('oauth2') ? { access_token: 't', expires_in: 600 } : dk; return { getResponseCode: () => 200, getContentText: () => JSON.stringify(body) }; } }
 });
 
@@ -58,6 +59,11 @@ const bigReads = () => CATEGORIES_AND().reduce((n, k) => n + sheets[k].bigReads,
 function CATEGORIES_AND() { return [...S.CATEGORIES, 'Log', 'Cache']; }
 
 assert.strictEqual(S.invCall(T, { action: 'load' }).rows.length, 0, 'empty inventory loads');
+// doPost: the JSON API the Cloudflare function forwards to
+const post = body => JSON.parse(S.doPost({ postData: { contents: JSON.stringify(body) } }).text);
+assert.deepStrictEqual(post({ token: T, req: { action: 'load' } }), { ok: true, data: { rows: [] } });
+assert.deepStrictEqual(post({ token: 'wrong', req: { action: 'load' } }), { ok: false, error: 'forbidden' });
+assert.strictEqual(JSON.parse(S.doPost({ postData: { contents: 'not json' } }).text).ok, false);
 const base = bigReads();
 
 let s = S.invCall(T, { action: 'scan', text: 'AC0402FR-072K2L' });

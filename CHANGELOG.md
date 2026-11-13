@@ -2,6 +2,12 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.4.0 (unreleased)
+- **New:** the page can be served as a static site on Cloudflare Pages (`node tools/build_web.js` builds `web/index.html`), so it opens in well under a second instead of 3-6 s. It talks to `/api`, a Pages Function (`functions/api.js`) that forwards to the Apps Script `doPost`. The Apps Script page keeps working.
+- **New:** central part cache in Cloudflare D1 (SQLite): a scan of a part already seen is answered by the Pages Function without calling Google or the suppliers. New parts are stored there under every part number they have.
+- **New:** the page keeps the last inventory in localStorage, so Search works at once on open.
+- **Changed:** `partKeys_` (Barcode.js) holds the lookup order and cache keys; the page computes the keys and sends them with each scan.
+
 ## 0.3.0 (unreleased)
 - **New:** Search tab sorting like the distributor sites: sort by category, value (by size, so 100nF < 1uF < 4.7uF), package, quantity, location, part number or updated, ascending or descending, plus a category filter and a result count. Runs in the page; no server call.
 

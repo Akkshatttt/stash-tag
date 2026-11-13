@@ -24,7 +24,7 @@ function openPage(answers) {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'AppPage.html'), 'utf8');
   const parts = html.split('<script>').slice(1).map(x => x.split('</script>')[0]);
   const script = parts.join(';\n').replace('<?!= lib ?>', () => S.clientLib_())
-    .replace('<?!= JSON.stringify(token) ?>', '"tok"').replace('<?!= JSON.stringify(categories) ?>', '["Resistors","Capacitors","Misc"]');
+    .replace('<?!= JSON.stringify(token) ?>', answers.static ? '""' : '"tok"').replace('<?!= JSON.stringify(categories) ?>', '["Resistors","Capacitors","Misc"]');
   const byId = {};
   const calls = [];
   const document = { createElement: t => {
@@ -36,8 +36,17 @@ function openPage(answers) {
   const run = { withSuccessHandler(ok) { this.ok = ok; return this; }, withFailureHandler(f) { this.fail = f; return this; },
     invCall(token, req) { calls.push(JSON.parse(JSON.stringify(req))); const a = answers[req.action]; if (a instanceof Error) this.fail(a); else this.ok(a); } };
   const ctx = vm.createContext(Object.assign({ document, google: { script: { run } }, ZXing: {}, URL, Image: function () {}, console, setTimeout, Date }, answers.env));
+  if (answers.static) {   // Cloudflare build: no google.script, fetch('/api'), token from #t=, inventory in localStorage
+    delete ctx.google;
+    const ls = answers.static.ls || {};
+    Object.assign(ctx, { location: { hash: answers.static.hash || '', pathname: '/' }, history: { replaceState() { ctx.location.hash = ''; } },
+      localStorage: { getItem: k => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); } },
+      fetch: (url, o) => { const b = JSON.parse(o.body); calls.push(b.req); fetched.push({ url, token: b.token });
+        const a = answers[b.req.action]; return Promise.resolve({ json: () => Promise.resolve(a instanceof Error ? { ok: false, error: a.message } : { ok: true, data: a }) }); } });
+  }
+  const fetched = [];
   vm.runInContext(script, ctx);
-  return { byId, calls, text: () => byId.app.textContent };
+  return { byId, calls, fetched, ctx, text: () => byId.app.textContent };
 }
 
 const rec = { supplier: 'DigiKey', mpn: 'AC0402FR-072K2L', manufacturer: 'YAGEO', description: 'RES 2.2K 1% 0402', dkPn: 'X-ND', mouserPn: '', groupKey: 'R|2.2k|0402', spec: '1%', category: 'Resistors' };
@@ -50,7 +59,7 @@ const inputs = () => p.byId.app.find(e => e.tag === 'input' && !e.attrs.capture 
 inputs()[0].value = 'AC0402FR-072K2L'; inputs()[0].fire('input');
 p.byId.app.find(e => e.textContent === 'Look up')[0].click();
 assert.deepStrictEqual(p.calls[0], { action: 'load' });
-assert.deepStrictEqual(p.calls[1], { action: 'scan', text: 'AC0402FR-072K2L' });
+assert.deepStrictEqual(p.calls[1], { action: 'scan', texts: ['AC0402FR-072K2L'], keys: ['ac0402fr072k2l'] });
 assert.ok(/AC0402FR-072K2L/.test(p.text()) && /Already in stock: 75 at A1/.test(p.text()));
 const qty = inputs().filter(e => e.value === '50')[0];
 assert.ok(qty, 'quantity prefilled from the label');
@@ -101,6 +110,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   await sleep(10);
   assert.ok(/live camera blocked \(NotAllowedError: denied\)/.test(p.text()) && /photo button/.test(p.text()), 'blocked camera says why and points to the photo button');
+  // static (Cloudflare) page: token from #t= is remembered, inventory shows from localStorage before the load answers, cloud-cache hit has no parsed
+  const ls = { inv: JSON.stringify([row]) };
+  p = openPage({ static: { hash: '#t=abc', ls }, load: { rows: [row] }, scan: { rec, source: 'cloud cache', warnings: [] } });
+  assert.strictEqual(JSON.parse(ls.token), 'abc'); assert.strictEqual(p.ctx.location.hash, '', 'token removed from the address bar');
+  p.byId.t2.click(); assert.ok(/2.2k 0402/.test(p.text()), 'search shows the stored inventory at once');
+  await sleep(10);
+  assert.deepStrictEqual(p.fetched[0], { url: '/api', token: 'abc' });
+  p.byId.t1.click();
+  inputs()[0].value = '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ40'; inputs()[0].fire('input');
+  p.byId.app.find(e => e.textContent === 'Look up')[0].click();
+  await sleep(10);
+  assert.ok(/Add to stock/.test(p.text()) && inputs().some(e => e.value === '40'), 'qty comes from the local parse on a cloud hit');
+  p = openPage({ static: { ls: { token: '"abc"' } }, load: { rows: [] } });
+  await sleep(10);
+  assert.strictEqual(p.fetched[0].token, 'abc', 'token remembered from localStorage');
+  p = openPage({ static: {}, load: { rows: [] } });
+  assert.ok(/no access token/.test(p.text()) && !p.calls.length);
+  const built = require('../tools/build_web').buildWeb();
+  assert.ok(!/<\?/.test(built) && /function partKeys_/.test(built), 'build fills every template tag');
+
   let stopped = 0;
   const wasm = { readBarcodes: () => Promise.resolve([{ text: '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50', format: 'DataMatrix', isValid: true }]) };
   p = openPage({ load: { rows: [] }, scan: { parsed: { qty: 50, lot: '' }, rec, source: 'DigiKey', warnings: [] }, confirm: { row, isNew: false },

@@ -63,3 +63,15 @@ function mergeLabels_(texts) {
   if (!out.supplier) guessSupplier_(out, out.supplierPn || out.mpn);
   return out;
 }
+
+/** Parsed label -> lookup candidates in the order to try, and the normalised cache keys. Shared by Apps Script and the page (the page sends
+ *  the keys to the Cloudflare part cache). */
+function partKeys_(parsed) {
+  var cands = [], seen = {}, keys = [];
+  var add = function (s, pn) { pn = squash(pn); var k = s + '|' + normPn(pn); if (pn && !seen[k]) { seen[k] = 1; cands.push({ supplier: s, pn: pn }); } };
+  var first = parsed.supplier || 'DigiKey', other = first === 'DigiKey' ? 'Mouser' : 'DigiKey';
+  add(first, parsed.supplierPn); add(first, parsed.mpn); add(other, parsed.mpn);
+  (parsed.alts || []).forEach(function (p) { add(first, p); add(other, p); });   // leftover 1D bars, tried last
+  cands.forEach(function (c) { var k = normPn(c.pn); if (keys.indexOf(k) < 0) keys.push(k); });
+  return { cands: cands, keys: keys };
+}
