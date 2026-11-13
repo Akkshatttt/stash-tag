@@ -16,7 +16,11 @@ const S = loadSrc({});
 const MUST = {
   'digikey/reddit_04e8.jpg': { mpn: 'SSM2019BRNZ', supplierPn: '505-SSM2019BRNZ-ND', qty: 1 },
   'mouser/mouser_diyaudio.jpg': { mpn: 'RN60D3920FB14', qty: 4 },
-  'digikey/23b09f6d945a1ec538b5417a06e72e9703359a3e.jpeg': { mpn: '364019-01', supplierPn: 'Q1045-ND', qty: 3 }
+  'digikey/23b09f6d945a1ec538b5417a06e72e9703359a3e.jpeg': { mpn: '364019-01', supplierPn: 'Q1045-ND', qty: 3 },
+  // the user's own Mouser packets (WhatsApp-compressed phone photos): 2D has 1P on the first, a customer P/N (no MPN) on the others
+  'mouser/WhatsApp Image 2026-11-13 at 07.15.09.jpeg': { mpn: 'BSC030P03NS3GAUMA1', qty: 44, supplier: 'Mouser' },
+  'mouser/WhatsApp Image 2026-11-13 at 07.15.10.jpeg': { supplierPn: '870-IS25LP128F-JBLA3', mpn: '', qty: 6, supplier: 'Mouser' },
+  'mouser/WhatsApp Image 2026-11-s13 at 07.15.09.jpeg': { supplierPn: '511-STM32H755ZIT6', mpn: '', qty: 6, supplier: 'Mouser' }
 };
 
 (async () => {
@@ -29,8 +33,10 @@ const MUST = {
       let img;
       try { img = await Jimp.read(path.join(dir, f)); } catch (e) { console.log('unreadable', key, e.message); continue; }
       const t0 = Date.now();
-      const rs = await S.decodeWasm_(wasm, { width: img.bitmap.width, height: img.bitmap.height, data: new Uint8ClampedArray(img.bitmap.data) }, false);
-      const p = S.mergeLabels_(rs.map(r => r.text));
+      // same per-mode decode as the page: DigiKey reads only the Data Matrix, Mouser reads the 2D code and then the 1D bars it anchors
+      const id = { width: img.bitmap.width, height: img.bitmap.height, data: new Uint8ClampedArray(img.bitmap.data) }, hint = sup === 'mouser' ? 'Mouser' : 'DigiKey';
+      const rs = sup === 'mouser' ? await S.mouserRead_(wasm, id, false) : await S.decodeWasm_(wasm, id, false, ['DataMatrix']);
+      const p = S.mergeLabels_(rs.map(r => r.text), hint);
       console.log(key, img.bitmap.width + 'x' + img.bitmap.height, (Date.now() - t0) + 'ms', rs.length + ' barcode(s)', JSON.stringify({ mpn: p.mpn, supplierPn: p.supplierPn, qty: p.qty, supplier: p.supplier }));
       if (MUST[key]) { n++; Object.keys(MUST[key]).forEach(k => assert.strictEqual(p[k], MUST[key][k], key + ' ' + k)); }
     }

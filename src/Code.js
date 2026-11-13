@@ -19,7 +19,8 @@ function clientLib_() {
   var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM, GS: GS, RS: RS };
   return Object.keys(vars).map(function (n) { return 'var ' + n + '=' + JSON.stringify(vars[n]) + ';'; }).join('\n') + '\n' +
     [squash, normPn, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_,
-      parseLabel_, looksLikeSupplierPn_, guessSupplier_, mergeLabels_, partKeys_].map(String).join('\n');
+      parseLabel_, looksLikeSupplierPn_, guessSupplier_, mergeLabels_, partKeys_, labelStrip_, mouserRead_].map(String).join('\n') +
+    '\nvar MOUSER_BARS=' + JSON.stringify(MOUSER_BARS) + ';';
 }
 
 /** JSON API for the static page (Cloudflare Pages forwards /api here). Body: {token, req} -> {ok, data} or {ok:false, error}. */
@@ -36,14 +37,14 @@ function invCall(token, req) {
   if (!tok || token !== tok) throw new Error('forbidden');
   var ss = getSs();
   if (req.action === 'load') return { rows: loadInventory_(ss) };
-  if (req.action === 'scan') return scan_(ss, req.texts || req.text);
+  if (req.action === 'scan') return scan_(ss, req.texts || req.text, req.supplier);
   if (req.action === 'confirm') return locked_(function () { return confirm_(ss, req); });
   throw new Error('unknown action');
 }
 
 /** Parse the scanned text and look the part up (cache, then APIs). Writes nothing but the product cache. The page knows what is already stocked. */
-function scan_(ss, text) {   // text: one string (typed) or an array of every barcode read from a photo / video frame
-  var parsed = mergeLabels_([].concat(text));
+function scan_(ss, text, supplier) {   // text: one string (typed) or an array of every barcode read from a photo / video frame; supplier: scan mode
+  var parsed = mergeLabels_([].concat(text), supplier);
   if (!parsed.mpn && !parsed.supplierPn) return { parsed: parsed, rec: null, warnings: [parsed.fields && (parsed.fields.Q || parsed.fields['1V'])
     ? 'This 2D code has no part number (Mouser labels never do). Scan the part-number barcode on the label, or type the part number.' + (parsed.fields['1V'] ? ' Manufacturer: ' + parsed.fields['1V'] + '.' : '')
     : 'Nothing readable in that scan. Type the part number instead.'] };

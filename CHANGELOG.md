@@ -2,6 +2,13 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.6.0 (unreleased)
+- **New:** DigiKey | Mouser scan mode on the Add stock card and in the live camera, remembered on the phone and sent with each scan.
+- **Changed:** DigiKey mode reads only the Data Matrix (faster; live asks as soon as the label shows a part number, no one-second wait).
+- **New:** Mouser mode reads the 2D code; when it has no manufacturer PN (orders with a customer P/N replace 1P by P), it reads the 1D bars as thin strips anchored on the 2D code, deskewed by its angle and scaled in one pass (`mouserRead_`, `labelStrip_` in Decode.js). The user's three real Mouser photos now give the Mouser P/N in 0.04-0.21 s each; before, 2 of 3 failed.
+- **Fixed:** Mouser's vertical label code (e.g. 467DPD) was taken as the manufacturer PN; in Mouser mode it is ignored.
+- **New:** the page checks for a part number before calling the server; without one it shows "Which barcode is the part number?" with the bars read (live after about 6 s); a tapped bar is looked up with the label's quantity kept.
+
 ## 0.5.0 (unreleased)
 - **New:** shared admin password for the Cloudflare page. With the Pages secret `PASSWORD` set, the page shows a sign-in card and `/api` accepts only that password (compared in constant time); the Function swaps it for the Apps Script token, which never reaches the phone. A wrong or changed password signs the browser out and clears its stored inventory. Without `PASSWORD` the `#t=` token works as before.
 

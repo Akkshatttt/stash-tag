@@ -103,7 +103,52 @@ function makeDecoder_(zx) {
 
 /** zxing-wasm (zxing-cpp compiled to WebAssembly): handles perspective, glare, many symbols and full resolution far better than the JS port.
  *  wasm = the ZXingWASM global in the page or require('zxing-wasm/reader') in Node; imageData = {width, height, data} RGBA. Promise of [{text, format}]. */
-function decodeWasm_(wasm, imageData, fast) {
-  return wasm.readBarcodes(imageData, { formats: ['DataMatrix', 'Code128', 'Code39', 'QRCode', 'PDF417'], tryHarder: !fast, tryRotate: true, tryInvert: !fast, tryDownscale: true, maxNumberOfSymbols: 16 })
-    .then(function (rs) { return rs.filter(function (r) { return r.isValid !== false && r.text; }).map(function (r) { return { text: r.text, format: r.format }; }); });
+function decodeWasm_(wasm, imageData, fast, formats) {   // formats: DigiKey mode passes ['DataMatrix'] (much faster); default reads everything
+  return wasm.readBarcodes(imageData, { formats: formats || ['DataMatrix', 'Code128', 'Code39', 'QRCode', 'PDF417'], tryHarder: !fast, tryRotate: true, tryInvert: !fast, tryDownscale: true, maxNumberOfSymbols: 16 })
+    .then(function (rs) { return rs.filter(function (r) { return r.isValid !== false && r.text; }).map(function (r) { return { text: r.text, format: r.format, position: r.position }; }); });
+}
+
+// Mouser label layout, in Data Matrix sizes (s) from the 2D code's top-left corner, along its own axes (so tilt and rotation do not matter).
+// The 1D bars sit left of and below the 2D code. ponytail: fitted to the Mouser label template seen in Nov 2026; retune here if Mouser changes it.
+var MOUSER_BARS = { u0: -5.8, u1: 0.2, v0: -0.3, v1: 5.0, h: 0.35, step: 0.15, px: 330 };
+
+/** One horizontal strip of the label, cut along the Data Matrix axes and scaled in a single bilinear pass over the RGBA image (deskew + crop +
+ *  upscale without touching the rest of the photo). tl = 2D top-left corner, a = its angle, s = its size, v = strip top in s units, k = output px per source px. */
+function labelStrip_(img, tl, a, s, v, k) {
+  var L = MOUSER_BARS, w = Math.round((L.u1 - L.u0) * s * k), h = Math.max(4, Math.round(L.h * s * k)), out = new Uint8ClampedArray(w * h * 4);
+  var c = Math.cos(a), sn = Math.sin(a), W = img.width, H = img.height, d = img.data;
+  for (var j = 0; j < h; j++) {
+    var vv = (v * s) + j / k;
+    for (var i = 0; i < w; i++) {
+      var uu = L.u0 * s + i / k, x = tl.x + uu * c - vv * sn, y = tl.y + uu * sn + vv * c, o = (j * w + i) * 4;
+      if (x < 0 || y < 0 || x >= W - 1 || y >= H - 1) { out[o] = out[o + 1] = out[o + 2] = 255; out[o + 3] = 255; continue; }
+      var x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, p = (y0 * W + x0) * 4, q = p + W * 4;
+      for (var ch = 0; ch < 3; ch++) out[o + ch] = (d[p + ch] * (1 - fx) + d[p + 4 + ch] * fx) * (1 - fy) + (d[q + ch] * (1 - fx) + d[q + 4 + ch] * fx) * fy;
+      out[o + 3] = 255;
+    }
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** Mouser mode: read the 2D code; if it has no manufacturer PN (orders with a customer P/N replace 1P by P), read the 1D bars as thin deskewed
+ *  strips anchored on the 2D code, top to bottom, Code128 only, stopping at the first Mouser PN (NNN-...). Without a 2D code: plain 1D read.
+ *  Promise of [{text, format}]. Low compute: a few small strips instead of the whole photo at full resolution. */
+function mouserRead_(wasm, img, fast) {
+  return decodeWasm_(wasm, img, fast, ['DataMatrix']).then(function (dm) {
+    var two = dm.filter(function (r) { return r.text.indexOf('[)>') >= 0; })[0];
+    if (!two || !two.position) return decodeWasm_(wasm, img, fast, ['Code128', 'DataMatrix']);
+    if (/[\x1d␝]1P[^\x1d␝\x1e␞]/.test(two.text)) return [two];   // 2D already names the part
+    var P = two.position, tl = P.topLeft, a = Math.atan2(P.topRight.y - tl.y, P.topRight.x - tl.x), s = Math.sqrt(Math.pow(P.topRight.x - tl.x, 2) + Math.pow(P.topRight.y - tl.y, 2));
+    var L = MOUSER_BARS, k = Math.max(1, L.px / s), found = [two], seen = {}, rows = [];
+    for (var v = L.v0; v < L.v1; v += L.step) rows.push(v);
+    function next(i) {
+      if (i >= rows.length) return found;
+      return wasm.readBarcodes(labelStrip_(img, tl, a, s, rows[i], k), { formats: ['Code128'], tryHarder: true, tryRotate: false, maxNumberOfSymbols: 2 }).then(function (rs) {
+        var hit = false;
+        rs.forEach(function (r) { if (r.text && r.isValid !== false && !seen[r.text]) { seen[r.text] = 1; found.push({ text: r.text, format: r.format }); if (/^\d{2,3}-\S+/.test(r.text)) hit = true; } });
+        return hit ? found : next(i + 1);
+      });
+    }
+    return next(0);
+  });
 }

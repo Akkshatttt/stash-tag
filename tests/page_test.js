@@ -59,7 +59,7 @@ const inputs = () => p.byId.app.find(e => e.tag === 'input' && !e.attrs.capture 
 inputs()[0].value = 'AC0402FR-072K2L'; inputs()[0].fire('input');
 p.byId.app.find(e => e.textContent === 'Look up')[0].click();
 assert.deepStrictEqual(p.calls[0], { action: 'load' });
-assert.deepStrictEqual(p.calls[1], { action: 'scan', texts: ['AC0402FR-072K2L'], keys: ['ac0402fr072k2l'] });
+assert.deepStrictEqual(p.calls[1], { action: 'scan', texts: ['AC0402FR-072K2L'], supplier: 'DigiKey', keys: ['ac0402fr072k2l'] });
 assert.ok(/AC0402FR-072K2L/.test(p.text()) && /Already in stock: 75 at A1/.test(p.text()));
 const qty = inputs().filter(e => e.value === '50')[0];
 assert.ok(qty, 'quantity prefilled from the label');
@@ -142,7 +142,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.ok(!/<\?/.test(built) && /function partKeys_/.test(built), 'build fills every template tag');
 
   let stopped = 0;
-  const wasm = { readBarcodes: () => Promise.resolve([{ text: '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50', format: 'DataMatrix', isValid: true }]) };
+  const asked = [];
+  const wasm = { readBarcodes: (img, o) => { asked.push(JSON.parse(JSON.stringify(o.formats))); return Promise.resolve([{ text: '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50', format: 'DataMatrix', isValid: true }]); } };
   p = openPage({ load: { rows: [] }, scan: { parsed: { qty: 50, lot: '' }, rec, source: 'DigiKey', warnings: [] }, confirm: { row, isNew: false },
     env: { ZXingWASM: wasm, navigator: { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: () => stopped++ }] }) } } } });
   p.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
@@ -153,5 +154,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   live.find(e => e.textContent === 'Use this part')[0].click();
   assert.strictEqual(stopped, 1, 'camera stopped'); assert.strictEqual(live.style.display, 'none');
   assert.ok(/Add to stock/.test(p.text()) && /AC0402FR-072K2L/.test(p.text()), 'normal part card follows');
+  assert.deepStrictEqual(asked[0], ['DataMatrix'], 'DigiKey mode reads only the Data Matrix');
+
+  // scan mode switch: remembered and sent with the scan; a label without a part number makes no server call and offers the bars to pick
+  const ls3 = { pass: '"pw"' };
+  p = openPage({ static: { ls: ls3 }, load: { rows: [] }, scan: { parsed: { qty: 6 }, rec, source: 'Mouser', warnings: [] } });
+  await sleep(10);
+  p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Mouser')[0].click();
+  assert.strictEqual(JSON.parse(ls3.supplier), 'Mouser');
+  const two = '[)>␞06␝K37412632␝14K024␝PIC1␝Q6␝4LPH␝1VSTMicro';
+  const before = p.calls.length;
+  p.ctx.doScan([two, '37412632', 'IC1', '6', 'PH', '467DPD', '511-STM32H755ZIT6']);
+  await sleep(10);
+  assert.strictEqual(p.calls.length, before + 1, 'a Mouser PN on the label goes to the server');
+  assert.strictEqual(p.calls.at(-1).supplier, 'Mouser');
+  p.ctx.doScan([two, '37412632', 'IC1', '6', 'PH', '467DPD']);
+  await sleep(10);
+  assert.strictEqual(p.calls.length, before + 1, 'no part number: no server call');
+  assert.ok(/Which barcode is the part number/.test(p.text()), 'pick list instead of a lookup');
+  assert.ok(!p.byId.app.find(e => e.tag === 'button' && e.textContent === 'IC1').length, 'customer P/N from the 2D code is not offered');
+  p.byId.app.find(e => e.tag === 'button' && e.textContent === '467DPD')[0].click();
+  await sleep(10);
+  assert.deepStrictEqual(p.calls.at(-1).texts, ['467DPD'], 'the tapped bar is looked up as typed');
+  assert.ok(p.byId.app.find(e => e.tag === 'input' && e.value === '6').length, 'quantity kept from the 2D code');
   console.log('page ok');
 })().catch(e => { console.error(e); process.exit(1); });

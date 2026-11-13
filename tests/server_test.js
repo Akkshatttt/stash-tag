@@ -97,4 +97,7 @@ Object.keys(mem).filter(k => k.startsWith('inv:')).forEach(k => delete mem[k]);
 inv = S.invCall(T, { action: 'load' }).rows;
 assert.strictEqual(inv[0].qty, 125, 'rebuilt from the sheets when the snapshot expires');
 assert.strictEqual(S.searchRows_(inv, '0402 2.2k').length, 1);
+// scan mode hint: Mouser mode makes the server parse and look up as Mouser (vertical label code ignored)
+const ms = S.invCall(T, { action: 'scan', texts: ['[)>␞06␝K1␝PIC1␝Q6', '467DPD', '511-STM32H755ZIT6'], supplier: 'Mouser' });
+assert.deepStrictEqual([ms.parsed.supplier, ms.parsed.supplierPn, ms.parsed.mpn], ['Mouser', '511-STM32H755ZIT6', '']);
 console.log('server ok');

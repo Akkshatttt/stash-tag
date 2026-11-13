@@ -61,9 +61,26 @@ function loginView() {
 }
 function scanReq(text) {   // typed string or barcode list -> scan request with the part-cache keys (the cloud cache answers without Google)
   var texts = [].concat(text);
-  return { action: 'scan', texts: texts, keys: partKeys_(mergeLabels_(texts)).keys };
+  return { action: 'scan', texts: texts, supplier: ui.sup, keys: partKeys_(mergeLabels_(texts, ui.sup)).keys };
 }
-function fillParsed(r, req) { if (!r.parsed) r.parsed = mergeLabels_(req.texts); return r; }   // a cloud-cache hit sends only the record
+function fillParsed(r, req) { if (!r.parsed) r.parsed = mergeLabels_(req.texts, req.supplier); return r; }   // a cloud-cache hit sends only the record
+function hasPn(texts) { var p = mergeLabels_(texts, ui.sup); return !!(p.mpn || p.supplierPn); }
+function pickList(texts) {   // bare 1D values a person could recognise as the part number (2D field values, digits and country codes left out)
+  var f = mergeLabels_(texts, ui.sup).fields || {}, vals = {};
+  Object.keys(f).forEach(function (k) { vals[f[k]] = 1; });
+  return texts.map(squash).filter(function (t, i, a) { return t.indexOf('[)>') < 0 && t.length >= 3 && !/^\d+$/.test(t) && !vals[t] && a.indexOf(t) === i; });
+}
+function pickScan(from, t) {   // the user tapped the bar that is the part number: look it up as typed, keep qty/lot from the label's 2D code
+  var label = mergeLabels_(from, ui.sup);
+  doScan(t, function (r) { r.parsed.qty = r.parsed.qty || label.qty; r.parsed.lot = r.parsed.lot || label.lot; });
+}
+function supSwitch(onChange) {   // DigiKey | Mouser scan mode, remembered on this phone
+  return el('div', { className: 'tabs' }, ['DigiKey', 'Mouser'].map(function (s) {
+    var b = el('button', { text: s, className: ui.sup === s ? 'on' : '' });
+    b.addEventListener('click', function () { ui.sup = s; store('supplier', s); if (onChange) onChange(); render(); });
+    return b;
+  }));
+}
 // The whole inventory is fetched once (background) and searched here, so Search and the 'already in stock' hint cost no server call.
 // The last copy is kept in localStorage so Search works at once on open; the fresh load replaces it.
 function loadInv() {
@@ -73,7 +90,7 @@ function loadInv() {
 }
 function stocked(rec) { return (st.inv || []).filter(function (r) { return r.category === rec.category && r.groupKey === rec.groupKey; })[0] || null; }
 var st = { scan: null, msg: '', inv: null };       // last server answers
-var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '', sort: '', dir: 'asc', cat: '' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '', sort: '', dir: 'asc', cat: '', sup: store('supplier') === 'Mouser' ? 'Mouser' : 'DigiKey' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
 
 function el(tag, props, kids) {
   var e = document.createElement(tag);
@@ -109,7 +126,9 @@ function decodeImageData(id, fast, done) {   // done(array of every barcode text
     try { var d = makeDecoder_(ZXing); done(texts(d.decodeAll(d.gray(id.data, id.width, id.height), { fast: fast, budgetMs: fast ? 600 : 4000 }))); } catch (e) { done([]); }
   };
   if (typeof ZXingWASM === 'undefined' || wasmFailed) return js();
-  decodeWasm_(ZXingWASM, id, fast).then(function (rs) { if (rs.length || fast) done(texts(rs)); else js(); },
+  // DigiKey: the Data Matrix holds everything, read nothing else. Mouser: 2D code, then the 1D bars it points to (mouserRead_, Decode.js).
+  var read = ui.sup === 'Mouser' ? mouserRead_(ZXingWASM, id, fast) : decodeWasm_(ZXingWASM, id, fast, ['DataMatrix']);
+  read.then(function (rs) { if (rs.length || fast) done(texts(rs)); else js(); },
     function (e) { wasmFailed = true; st.wasmError = String(e && e.message || e); js(); });
 }
 function decodeFile(file, done) {
@@ -123,10 +142,16 @@ function applyScan(r) {   // a scan answer becomes the part card (typed, photo a
   st.scan = r;
   if (r.rec) { ui.qty = r.parsed.qty ? String(r.parsed.qty) : ''; var ex = stocked(r.rec); ui.location = (ex && ex.location.split(' / ')[0]) || ''; ui.category = r.rec.category; ui.lot = r.parsed.lot || ''; }
 }
-function doScan(text) {   // text: typed string, or the array of every barcode read from a photo
+function doScan(text, fix) {   // text: typed string, or the array of every barcode read from a photo; fix(answer) adjusts it before the card
   ui.text = Array.isArray(text) ? '' : text; ui.qty = ''; ui.location = ''; ui.lot = '';
+  st.pick = null;
+  if (Array.isArray(text) && !hasPn(text)) {   // no part number on the label: no server call; let the user pick the right bar
+    st.scan = null; st.pick = pickList(text); st.pickFrom = text;
+    st.msg = st.pick.length ? '' : 'Read ' + text.length + ' barcode(s), part number not found. Retake the photo closer to the label, or type the part number below.';
+    return render();
+  }
   var req = scanReq(text);
-  call(req, function (r) { applyScan(fillParsed(r, req)); });
+  call(req, function (r) { fillParsed(r, req); if (fix) fix(r); applyScan(r); });
 }
 
 // ---- live camera: a full-screen overlay reads frames until a part resolves, then asks the user to confirm before the normal part card shows.
@@ -144,7 +169,9 @@ function startLive() {
     video.setAttribute('playsinline', ''); video.srcObject = stream;
     var close = el('button', { className: 'sec', text: 'Close camera' }); close.addEventListener('click', function () { stopLive(); render(); });
     var box = liveBox(); box.innerHTML = ''; box.style.display = 'block';
-    [el('div', { className: 'big', text: 'Live scan' }), video, status, popup, close].forEach(function (c) { box.appendChild(c); });
+    var mode = el('div', {}), drawMode = function () { mode.innerHTML = ''; mode.appendChild(supSwitch(function () { if (live) { liveReset('Point at the label. Reading...'); drawMode(); } })); };
+    drawMode();
+    [el('div', { className: 'big', text: 'Live scan' }), mode, video, status, popup, close].forEach(function (c) { box.appendChild(c); });
     live = { stream: stream, video: video, status: status, popup: popup, seen: {}, firstAt: 0, asking: false, paused: false, stop: false };
     if (video.play) video.play();
     liveTick();
@@ -156,14 +183,28 @@ function liveTick() {
   if (!l || l.stop) return;
   var v = l.video, next = function () { setTimeout(liveTick, 120); };
   if (l.paused || l.asking || !v.videoWidth) return next();
-  decodeImageData(toImageData(v, v.videoWidth, v.videoHeight, 1280), true, function (texts) {
-    if (l.stop) return;
-    texts.forEach(function (t) { l.seen[t] = 1; });
-    var n = Object.keys(l.seen).length, now = Date.now();
-    if (n && !l.firstAt) l.firstAt = now;
-    if (n && now - l.firstAt > 900) return liveAsk(next);   // collect about a second so every bar on the label is in
+  // DigiKey frames are shrunk (the Data Matrix is big); Mouser frames stay full size so the thin 1D bars keep their modules.
+  decodeImageData(toImageData(v, v.videoWidth, v.videoHeight, ui.sup === 'Mouser' ? 1920 : 1280), true, function (texts) {
+    if (l.stop || l.paused) return;
+    texts.forEach(function (t) { l.seen[t] = 1; });   // bars add up over frames
+    var all = Object.keys(l.seen), now = Date.now();
+    if (all.length && !l.firstAt) l.firstAt = now;
+    if (all.length && hasPn(all)) return liveAsk(next);   // asks the server only once the label shows a part number
+    if (all.length) l.status.textContent = 'Read ' + all.length + ' barcode(s), looking for the part number...';
+    var pick = all.length && now - l.firstAt > 6000 ? pickList(all) : [];
+    if (pick.length) return livePick(pick, next);
     next();
   });
+}
+function livePick(pick, next) {   // no part number after a few seconds: let the user tap the bar that is the part number
+  var l = live;
+  l.paused = true; l.status.textContent = 'Which barcode is the part number?';
+  l.popup.innerHTML = '';
+  l.popup.appendChild(el('div', { className: 'card' }, pick.map(function (t) {
+    var b = el('button', { className: 'sec', text: t });
+    b.addEventListener('click', function () { var all = Object.keys(l.seen); stopLive(); pickScan(all, t); });
+    return b;
+  }).concat([(function () { var b = el('button', { className: 'primary', text: 'Keep scanning' }); b.addEventListener('click', function () { liveReset('Point at the label. Reading...'); next(); }); return b; })()])));
 }
 function liveAsk(next) {
   var l = live, texts = Object.keys(l.seen);
@@ -213,8 +254,11 @@ function addView() {
   snap.addEventListener('click', function () { cam.value = ''; cam.click(); });
   var liveBtn = el('button', { className: 'sec', text: 'Live scan (camera)', disabled: busy });
   liveBtn.addEventListener('click', startLive);
-  root.appendChild(el('div', { className: 'card' }, [cam, snap, liveBtn, field('...or type / paste a part number or barcode text', 'text', { placeholder: 'e.g. AC0402FR-072K2L' }),
+  root.appendChild(el('div', { className: 'card' }, [supSwitch(), cam, snap, liveBtn, field('...or type / paste a part number or barcode text', 'text', { placeholder: 'e.g. AC0402FR-072K2L' }),
     (function () { var b = el('button', { className: 'sec', text: 'Look up', disabled: busy }); b.addEventListener('click', function () { if (ui.text) doScan(ui.text); }); return b; })()]));
+  if (st.pick && st.pick.length) root.appendChild(el('div', { className: 'card' }, [el('div', { className: 'big', text: 'Which barcode is the part number?' }),
+    el('div', { className: 'small', text: 'The label did not show one clearly. Tap the part number (a Mouser P/N looks like 595-XXXX).' })].concat(st.pick.map(function (t) {
+      var b = el('button', { className: 'sec', text: t, disabled: busy }); b.addEventListener('click', function () { pickScan(st.pickFrom || [], t); }); return b; }))));
   var s = st.scan;
   if (s && !s.rec) {
     var p = s.parsed || {}, shown = String(p.raw || '').replace(/\x1d/g, '<GS>').replace(/\x1e/g, '<RS>').replace(/\x04/g, '<EOT>');

@@ -45,16 +45,18 @@ function guessSupplier_(out, pn) {
 
 /** Several barcodes from one photo or video frame -> one parsed label. The 2D code (starts with "[)>") gives the fields; the bare 1D texts fill in
  *  a missing part number: Mouser prints one 1D bar per field (PO, line, Mouser PN, MFG PN, qty, country, invoice) and its 2D code may lack the PN. */
-function mergeLabels_(texts) {
+function mergeLabels_(texts, hint) {   // hint: 'DigiKey' or 'Mouser' from the page's scan mode
   texts = (texts || []).map(function (t) { return String(t == null ? '' : t); }).filter(squash);
   var two = texts.filter(function (t) { return t.indexOf('[)>') >= 0; }), one = texts.filter(function (t) { return t.indexOf('[)>') < 0; });
   var out = parseLabel_(two[0] || (one.length === 1 ? one[0] : ''));
+  if (hint === 'Mouser' || hint === 'DigiKey') out.supplier = hint === 'Mouser' && /-ND$/i.test(out.supplierPn) ? 'DigiKey' : hint;
   if (!two.length && one.length === 1) return out;   // a single plain barcode: already handled as a typed part number
   var skip = {};
   Object.keys(out.fields).forEach(function (k) { skip[out.fields[k]] = 1; });
   var alts = [];
   one.map(squash).forEach(function (t) {
     if (!t || skip[t] || /^\d+$/.test(t) || t.length < 3 || /\s/.test(t) && t.length > 40) return;   // order/line/qty/invoice digits, country codes
+    if (hint === 'Mouser' && !/^\d{2,3}-/.test(t) && /^\d{2,3}[A-Z0-9]{3,4}$/.test(t)) return;   // Mouser's vertical label code (467MRL, 43EX5W)
     if (/^\d{2,3}-\S+/.test(t) && !out.supplierPn) { out.supplierPn = t; out.supplier = out.supplier || 'Mouser'; }
     else if (/[A-Za-z]/.test(t) && /\d/.test(t) && !out.mpn) out.mpn = t;
     else alts.push(t);

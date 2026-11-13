@@ -58,6 +58,27 @@ t('several barcodes from one photo merge into one label (Mouser prints one 1D ba
   assert.strictEqual(p.mpn, 'AC0402FR-072K2L');
   assert.strictEqual(S.parseLabel_('[)>␞06␝PQ1045-ND␝1P364019-01␝K12432␠TRAVIS␠FOSS␝Q3').fields.K, '12432 TRAVIS FOSS', 'zxing-wasm control-char symbols');
 });
+t('Mouser mode: customer P/N in the 2D code, vertical label code and field bars are never the part number', () => {
+  const two = '[)>␞06␝K37412632␝14K024␝PIC1␝Q6␝11K087334555␝4LPH␝1VSTMicro␞␄';   // real label: P = customer P/N, no 1P
+  let p = S.mergeLabels_([two, '37412632', '024', 'IC1', '6', 'PH', '467DPD']);
+  assert.strictEqual(p.mpn, '467DPD', 'without the hint the vertical code is mistaken for the MPN (the old bug)');
+  p = S.mergeLabels_([two, '37412632', '024', 'IC1', '6', 'PH', '467DPD'], 'Mouser');
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.supplier, p.qty], ['', '', 'Mouser', 6], 'no part number: the page shows the pick list');
+  p = S.mergeLabels_([two, '467DPD', '511-STM32H755ZIT6', 'IC1'], 'Mouser');
+  assert.deepStrictEqual([p.mpn, p.supplierPn, p.supplier], ['', '511-STM32H755ZIT6', 'Mouser']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(S.partKeys_(p).cands[0])), { supplier: 'Mouser', pn: '511-STM32H755ZIT6' }, 'Mouser is asked first');
+  p = S.mergeLabels_(['[)>␞06␝KEPS␠PD␠V2␝14K008␝1PBSC030P03NS3GAUMA1␝Q44␝11K086097937␝4LAT␝1VInfineon␞␄'], 'Mouser');
+  assert.deepStrictEqual([p.mpn, p.qty, p.supplier], ['BSC030P03NS3GAUMA1', 44, 'Mouser'], '2D with 1P is enough');
+  assert.strictEqual(S.mergeLabels_(['[)>␞06␝P1-ND␝1PX␝30P1-ND'], 'Mouser').supplier, 'DigiKey', 'a DigiKey label in Mouser mode stays DigiKey');
+});
+t('labelStrip_ samples a rotated strip along the 2D code axes', () => {
+  const W = 40, H = 40, d = new Uint8ClampedArray(W * H * 4).fill(255);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x === 20) { const o = (y * W + x) * 4; d[o] = d[o + 1] = d[o + 2] = 0; }   // one vertical black line
+  const strip = S.labelStrip_({ width: W, height: H, data: d }, { x: 30, y: 10 }, 0, 4, 0, 1);   // u from -5.8s: x 6.8..30.8
+  assert.strictEqual(strip.width, 24); assert.ok(strip.height >= 4);
+  const dark = []; for (let i = 0; i < strip.width; i++) if (strip.data[i * 4] < 128) dark.push(i);
+  assert.deepStrictEqual(dark, [13], 'the line at x=20 lands at u index 13');
+});
 t('sortRows_: value by size, empty last, qty both ways, relevance keeps order', () => {
   const rows = [{ category: 'Capacitors', value: '1uF', qty: 5, mpns: 'B' }, { category: 'Capacitors', value: '100nF', qty: 50, mpns: 'A' }, { category: 'Resistors', value: '2.2k', qty: 7, mpns: 'C' },
     { category: 'Power ICs', value: '', qty: 1, mpns: 'D' }, { category: 'Resistors', value: '1M', qty: 9, mpns: 'E' }, { category: 'Capacitors', value: '4.7uF', qty: 2, mpns: 'F' }];
