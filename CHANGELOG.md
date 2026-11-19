@@ -2,6 +2,9 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.8.1 (unreleased)
+- **New:** debug info shows API calls made today (UTC) per provider, DigiKey and Mouser, as N / 1000. The Cloudflare Function counts every product request it sends (retries included, token requests not) in a D1 table `usage` (day, provider, n), created on first use. Page action `usage` reads it; the Apps Script page says the counter lives on the Cloudflare page. Lookups made by Apps Script itself are not counted.
+
 ## 0.8.0 (released)
 - **Changed (UI):** rebuilt after the iOS grouped-list style, light mode only. Large title, bottom tab bar, white rounded groups on a grey canvas with hairline separators, 44-50 pt rows, one filled primary button per screen. Search: one rounded search field with magnifier and clear button, scrolling category chips, sort menu, results as full rows (value, quantity at the right, category, spec, location, description, part numbers). Add: Live scan first, Take photo, type-a-part-number with Look up; the part card is a grouped list (sheet, quantity, location, lot) with Add to stock. The overlapping search controls of 0.7.1 are gone (checked in a rendered 500 px screenshot).
 - **Removed:** the DigiKey | Mouser switch. The label says who printed it (`detectSupplier_`: Mouser 2D has 14K, DigiKey 30P or -ND; a bare NNN-xxx bar is Mouser). One reader for every label: 2D code first; only a 2D code with no part number goes on to read the 1D bars; live looks for the 2D code in a 1280 px copy and builds the 4K frame only when bars must be read.

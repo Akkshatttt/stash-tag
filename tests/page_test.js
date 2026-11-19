@@ -204,5 +204,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.ok(/Part detected/.test(m.q.byId.live.textContent));
   m.q.ctx.ui.dbg = true; m.q.ctx.render();
   assert.ok(/decoder ready/.test(m.q.text()) && /stage full/.test(m.q.text()) && /P\/N 511-STM32H755ZIT6/.test(m.q.text()), 'debug line says what the decoder did: ' + m.q.text());
+  // debug panel: API calls today per provider come from the Cloudflare Function; the Apps Script page says where to look
+  p = openPage({ static: { ls: { token: '"abc"', debug: 'true' } }, load: { rows: [] }, usage: { day: '2026-11-19', DigiKey: 12, Mouser: 3 } });
+  await sleep(10);
+  assert.ok(/DigiKey calls today \(UTC\)12 \/ 1000/.test(p.text()) && /Mouser calls today \(UTC\)3 \/ 1000/.test(p.text()), 'counts shown: ' + p.text());
+  assert.ok(p.calls.some(c => c.action === 'usage'));
+  p = openPage({ load: { rows: [] } }); p.ctx.ui.dbg = true; p.ctx.loadUsage(); p.ctx.render();
+  assert.ok(/kept by the Cloudflare page/.test(p.text()), 'Apps Script page explains');
   console.log('page ok');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -32,6 +32,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (!allowed) return reply({ ok: false, error: 'forbidden' }, 403);
   const req = body.req || {};
   body = { token: env.TOKEN, req };
+  if (req.action === 'usage') return reply({ ok: true, data: await usage(env) });
   if (req.action !== 'scan') return reply(await forward(env, body));
 
   const texts = [].concat(req.texts || req.text || []).map(String).slice(0, 40), parsed = mergeLabels_(texts, req.supplier);
@@ -47,6 +48,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
     return reply(out);
   }
   const found = await lookupPart(env, parsed);
+  countCalls(env, waitUntil, found.calls);
   if (found.rec) store(env, waitUntil, found.rec, keys);
   else if (found.clean) miss(env, waitUntil, keys);   // remember a clean "not found" so rescanning the same packet costs no API call
   return reply({ ok: true, data: { parsed, rec: found.rec, source: found.source, warnings: found.warnings } });
@@ -63,6 +65,20 @@ async function cached(env, keys) {
   if (k) return { rec: JSON.parse(byKey[k].rec) };
   const fresh = r => r && r.rec === MISS && Date.now() - Date.parse(r.time) < MISS_MS;
   return keys.every(x => fresh(byKey[x])) ? { rec: null } : null;   // every key a recent miss: do not ask the suppliers again
+}
+// API calls per provider per UTC day, so the debug panel can show how much of each daily allowance (DigiKey and Mouser: about 1000) is gone.
+const USAGE_TABLE = 'CREATE TABLE IF NOT EXISTS usage (day TEXT, provider TEXT, n INTEGER NOT NULL, PRIMARY KEY (day, provider))';
+const utcDay = () => new Date().toISOString().slice(0, 10);
+function countCalls(env, waitUntil, calls) {
+  const day = utcDay(), list = Object.keys(calls || {}).filter(p => calls[p] > 0);
+  if (!list.length) return;
+  const write = () => env.DB.batch(list.map(p => env.DB.prepare('INSERT INTO usage (day, provider, n) VALUES (?, ?, ?) ON CONFLICT (day, provider) DO UPDATE SET n = n + excluded.n').bind(day, p, calls[p])));
+  waitUntil(write().catch(() => env.DB.prepare(USAGE_TABLE).run().then(write)).catch(() => {}));   // a missing table is created once; counting must never break a scan
+}
+async function usage(env) {
+  const day = utcDay(), out = { day, DigiKey: 0, Mouser: 0 };
+  try { ((await env.DB.prepare('SELECT provider, n FROM usage WHERE day = ?').bind(day).all()).results || []).forEach(r => { out[r.provider] = r.n; }); } catch (e) { /* no table yet: nothing counted */ }
+  return out;
 }
 const MISS = 'null', MISS_MS = 6 * 3600 * 1000;
 function miss(env, waitUntil, keys) {

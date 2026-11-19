@@ -8,12 +8,19 @@ const { buildShared } = require('../tools/build_web');
 
 const fx = n => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', n), 'utf8'));
 const rows = {};   // fake D1 table parts: key -> {rec, time}
+const usageRows = {};   // fake D1 table usage: 'day|provider' -> n
 let tableMade = false, dbFailsOnce = true;   // a fresh database has no table: the first read fails and the Function creates it
 const DB = {
   prepare(sql) {
     const st = { sql, args: [], bind(...a) { return Object.assign({}, st, { args: a }); },
-      async run() { if (/^CREATE/.test(sql)) tableMade = true; if (/^INSERT/.test(sql)) rows[this.args[0]] = { rec: this.args[1], time: this.args[2] }; return {}; },
-      async all() { if (!tableMade && dbFailsOnce) { dbFailsOnce = false; throw new Error('no such table: parts'); } return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec, time: rows[k].time })) }; } };
+      async run() {
+        if (/^CREATE TABLE IF NOT EXISTS parts/.test(sql)) tableMade = true;
+        if (/INTO usage/.test(sql)) { const k = this.args[0] + '|' + this.args[1]; usageRows[k] = (usageRows[k] || 0) + this.args[2]; }
+        else if (/^INSERT/.test(sql)) rows[this.args[0]] = { rec: this.args[1], time: this.args[2] };
+        return {};
+      },
+      async all() {
+        if (/FROM usage/.test(sql)) return { results: Object.keys(usageRows).filter(k => k.startsWith(this.args[0] + '|')).map(k => ({ provider: k.split('|')[1], n: usageRows[k] })) }; if (!tableMade && dbFailsOnce) { dbFailsOnce = false; throw new Error('no such table: parts'); } return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec, time: rows[k].time })) }; } };
     return st;
   },
   async batch(list) { for (const s of list) await s.run(); }
@@ -109,6 +116,21 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
   r = await scan(['ZZ-OTHER-2']);
   assert.ok(supplier.length > asked, 'a different number is looked up');
   mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: fx('mouser_AC0402FR-072K2L.json') } } });
+  // API call counter: every product request sent to a supplier is counted per provider per UTC day (token requests are not); the debug panel reads it
+  const day = new Date().toISOString().slice(0, 10), real = p => supplier.filter(c => c.url.includes(p) && !c.url.includes('oauth2')).length;
+  Object.keys(usageRows).forEach(k => delete usageRows[k]); Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0;
+  dkProduct = () => ({ code: 200, body: fx('dk_AC0402FR-072K2L.json') });
+  await scan(['AC0402FR-072K2L']);   // one DigiKey product request (the token request is not counted)
+  assert.strictEqual(usageRows[day + '|DigiKey'], 1); assert.strictEqual(real('digikey.com'), 1); assert.strictEqual(usageRows[day + '|Mouser'], undefined);
+  await scan(['AC0402FR-072K2L']);   // D1 hit: no new call
+  assert.strictEqual(usageRows[day + '|DigiKey'], 1, 'a cache hit is not counted');
+  const total = { DigiKey: 0, Mouser: 0 }; Object.keys(usageRows).forEach(k => { total[k.split('|')[1]] += usageRows[k]; });
+  assert.strictEqual(total.DigiKey + total.Mouser > 0, true, 'calls were counted');
+  r = await call({ token: 'tok', req: { action: 'usage' } });
+  assert.strictEqual(r.body.data.day, day); assert.strictEqual(r.body.data.DigiKey, total.DigiKey); assert.strictEqual(r.body.data.Mouser, total.Mouser);
+  usageRows['1999-01-01|DigiKey'] = 500;
+  r = await call({ token: 'tok', req: { action: 'usage' } });
+  assert.strictEqual(r.body.data.DigiKey, total.DigiKey, 'another UTC day is not mixed in');
   // errors become warnings and never carry a key; a 429 is retried once
   Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0;
   let n429 = 0;

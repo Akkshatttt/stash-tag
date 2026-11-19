@@ -278,6 +278,11 @@ function liveAsk(texts, next) {
   }, function (e) { if (!live) return; liveReset('Error: ' + (e && e.message || e)); next(); });
 }
 
+function loadUsage() {   // API calls per provider today (UTC), kept by the Cloudflare Function; fetched when the debug panel is open, at most every 20 s
+  if (!signedIn() || GAS || Date.now() - (st.usageAt || 0) < 20000) { if (GAS) st.usageNote = 'Call counts are kept by the Cloudflare page; open it there.'; return; }
+  st.usageAt = Date.now();
+  invoke({ action: 'usage' }, function (r) { st.usage = r; st.usageNote = ''; render(); }, function (e) { st.usageNote = 'Could not read the counter: ' + (e && e.message || e); render(); });
+}
 function patchInv(row) {
   if (!st.inv) return;
   var i = st.inv.findIndex(function (x) { return x.category === row.category && x.groupKey === row.groupKey; });
@@ -356,9 +361,16 @@ function addView() {
   root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'cell left' }, [typed, go])]));
   root.appendChild(el('div', { className: 'foot', text: 'DigiKey and Mouser labels are recognised automatically.' }));
   var dbgBtn = el('button', { className: 'link', text: ui.dbg ? 'Hide debug info' : 'Show debug info' });
-  dbgBtn.addEventListener('click', function () { ui.dbg = !ui.dbg; store('debug', ui.dbg); render(); });
+  dbgBtn.addEventListener('click', function () { ui.dbg = !ui.dbg; store('debug', ui.dbg); if (ui.dbg) loadUsage(); render(); });
   root.appendChild(dbgBtn);
-  if (ui.dbg) root.appendChild(el('div', { className: 'small', text: dbgText() }));
+  if (ui.dbg) {
+    var u = st.usage;
+    root.appendChild(el('div', { className: 'group' }, [
+      el('div', { className: 'cell' }, [el('span', { className: 'cl', text: 'DigiKey calls today (UTC)' }), el('span', { text: u ? u.DigiKey + ' / 1000' : '...' })]),
+      el('div', { className: 'cell' }, [el('span', { className: 'cl', text: 'Mouser calls today (UTC)' }), el('span', { text: u ? u.Mouser + ' / 1000' : '...' })]),
+      el('div', { className: 'pad small', text: st.usageNote || (u ? 'Day ' + u.day + '. Counts every product request sent to the supplier (retries included, token requests not); lookups made by Apps Script are not counted.' : 'Loading...') })]));
+    root.appendChild(el('div', { className: 'small', text: dbgText() }));
+  }
   return root;
 }
 
@@ -420,6 +432,7 @@ function render() {
 var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
 st.inv = signedIn() && store('inv') || null;
 loadInv();
+if (ui.dbg) loadUsage();
 t1.onclick = function () { tab = 'add'; render(); };
 t2.onclick = function () { tab = 'search'; render(); };
 render();
