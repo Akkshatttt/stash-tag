@@ -2,26 +2,45 @@
 <html>
 <head>
 <base target="_top">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <style>
-  body { font: 16px -apple-system, system-ui, sans-serif; background: #fafafa; margin: 0; padding: 12px; color: #222; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-  .tabs button { flex: 1; padding: 10px; border: 1px solid #ccc; background: #fff; border-radius: 8px; font-size: 16px; }
-  .tabs button.on { background: #222; color: #fff; }
-  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.15); padding: 12px; margin-bottom: 12px; }
-  label { display: block; font-size: 13px; color: #666; margin-top: 8px; }
-  input, select { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 8px; }
-  button.primary { width: 100%; padding: 12px; margin-top: 12px; background: #1e8e3e; color: #fff; border: 0; border-radius: 8px; font-size: 16px; }
-  button.sec { width: 100%; padding: 12px; margin-top: 8px; background: #1a73e8; color: #fff; border: 0; border-radius: 8px; font-size: 16px; }
-  .good { color: #1e8e3e; } .warn { color: #b06000; } .bad { color: #c5221f; }
-  .small { font-size: 13px; color: #666; } .big { font-size: 18px; font-weight: 600; }
-  .live { display: none; position: fixed; inset: 0; z-index: 10; background: #fff; padding: 12px; overflow: auto; }
-  .live video { width: 100%; max-height: 50vh; background: #000; border-radius: 8px; object-fit: cover; }
-  .row { display: flex; justify-content: space-between; gap: 8px; }
+  /* Phone-first, after Apple's HIG basics: system colours that follow light/dark, 17px body, 44px touch targets, one filled primary action per
+     card, tab bar at the bottom in thumb reach and clear of the home indicator, grouped cards, no motion beyond a press state. */
+  :root { --bg: #f2f2f7; --card: #fff; --text: #000; --muted: #6c6c70; --line: #d1d1d6; --blue: #007aff; --tint: rgba(0,122,255,.12); --good: #1f8a3b; --warn: #a15c00; --bad: #d70015; --field: #f2f2f7; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #000; --card: #1c1c1e; --text: #fff; --muted: #98989f; --line: #38383a; --blue: #0a84ff; --tint: rgba(10,132,255,.22); --good: #30d158; --warn: #ff9f0a; --bad: #ff453a; --field: #2c2c2e; } }
+  * { -webkit-tap-highlight-color: transparent; }
+  body { font: 17px/1.35 -apple-system, system-ui, sans-serif; background: var(--bg); margin: 0; color: var(--text);
+    padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(76px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  .tabbar button { flex: 1; min-height: 56px; border: 0; background: none; color: var(--muted); font: 600 12px/1.2 -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .tabbar button.on { color: var(--blue); }
+  .tabbar svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tabs { display: flex; background: var(--field); border-radius: 9px; padding: 2px; gap: 2px; margin-bottom: 4px; }   /* segmented control: DigiKey | Mouser */
+  .tabs button { flex: 1; min-height: 40px; padding: 0 10px; border: 0; background: none; color: var(--text); border-radius: 7px; font: 600 15px -apple-system, system-ui, sans-serif; }
+  .tabs button.on { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.25); color: var(--blue); }
+  @media (prefers-color-scheme: dark) { .tabs button.on { background: #636366; color: #fff; } }
+  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px 12px; font: 17px -apple-system, system-ui, sans-serif; color: var(--text); background: var(--field); border: 0; border-radius: 10px; }
+  input:focus, select:focus { outline: 2px solid var(--blue); outline-offset: 0; }
+  button { font-family: inherit; }
+  button.primary, button.sec { display: block; width: 100%; min-height: 50px; margin-top: 12px; border: 0; border-radius: 12px; font-size: 17px; font-weight: 600; }
+  button.primary { background: var(--blue); color: #fff; }
+  button.sec { background: var(--tint); color: var(--blue); margin-top: 8px; }
+  button:active { opacity: .6; }
+  button:disabled { opacity: .4; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .small { font-size: 13px; color: var(--muted); } .big { font-size: 20px; font-weight: 600; }
+  .small.warn, .small.good, .small.bad { font-weight: 600; }
+  .live { display: none; position: fixed; inset: 0; z-index: 10; background: var(--bg); overflow: auto; padding: max(12px, env(safe-area-inset-top)) 16px calc(12px + env(safe-area-inset-bottom)); }
+  .live video { width: 100%; max-height: 52vh; background: #000; border-radius: 14px; object-fit: cover; margin: 8px 0; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .row select { min-width: 0; }
 </style>
 </head>
 <body>
-<div class="tabs"><button id="t1">Add stock</button><button id="t2">Search</button></div>
+<div class="tabbar"><button id="t1"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>Add</button><button id="t2"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div>
 <div id="live" class="live"></div>
 <div id="app"></div>
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
