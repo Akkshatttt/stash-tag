@@ -1,29 +1,42 @@
 // Run: node tests/cloud_test.js
-// Drives functions/api.js (Cloudflare Pages Function) with a fake D1 and a fake Apps Script behind fetch.
+// Drives functions/api.js (Cloudflare Pages Function) with a fake D1, a fake Apps Script and fake DigiKey/Mouser behind fetch.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
+const { buildShared } = require('../tools/build_web');
 
+const fx = n => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', n), 'utf8'));
 const rows = {};   // fake D1 table parts: key -> {rec, time}
+let tableMade = false, dbFailsOnce = true;   // a fresh database has no table: the first read fails and the Function creates it
 const DB = {
   prepare(sql) {
     const st = { sql, args: [], bind(...a) { return Object.assign({}, st, { args: a }); },
-      async run() { if (/^INSERT/.test(sql)) rows[this.args[0]] = { rec: this.args[1], time: this.args[2] }; return {}; },
-      async all() { return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec })) }; } };
+      async run() { if (/^CREATE/.test(sql)) tableMade = true; if (/^INSERT/.test(sql)) rows[this.args[0]] = { rec: this.args[1], time: this.args[2] }; return {}; },
+      async all() { if (!tableMade && dbFailsOnce) { dbFailsOnce = false; throw new Error('no such table: parts'); } return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec })) }; } };
     return st;
   },
   async batch(list) { for (const s of list) await s.run(); }
 };
-const sent = [];
-global.fetch = async (url, o) => { sent.push(JSON.parse(o.body)); const a = answer(JSON.parse(o.body).req); return { status: 200, text: async () => JSON.stringify(a) }; };
-let answer = () => ({ ok: true, data: { rows: [] } });
+const sent = [], supplier = [];   // calls to Apps Script, calls to DigiKey/Mouser
+let answer = () => ({ ok: true, data: { rows: [] } }), dkProduct = () => ({ code: 200, body: fx('dk_AC0402FR-072K2L.json') }), mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: fx('mouser_AC0402FR-072K2L.json') } } });
+const res = (code, body) => ({ status: code, text: async () => typeof body === 'string' ? body : JSON.stringify(body) });
+global.fetch = async (url, o) => {
+  if (url === 'https://exec') { sent.push(JSON.parse(o.body)); return res(200, answer(JSON.parse(o.body).req)); }
+  supplier.push({ url, o });
+  if (url.includes('oauth2')) return res(200, { access_token: 'tok-dk', expires_in: 600 });
+  if (url.includes('digikey.com')) { const r = dkProduct(url, o); return res(r.code, r.body || ''); }
+  if (url.includes('mouser.com')) { const r = mouser(url, o); return res(r.code, r.body || ''); }
+  throw new Error('unexpected fetch ' + url);
+};
 const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
 
 (async () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'api.js'), 'utf8');
-  const { onRequestPost } = await import('data:text/javascript,' + encodeURIComponent(src));
+  assert.strictEqual(fs.readFileSync(path.join(__dirname, '..', 'lib', 'shared.js'), 'utf8').split('\r\n').join('\n'), buildShared(), 'lib/shared.js is out of date: run node tools/build_web.js');
+  const { onRequestPost } = await import(pathToFileURL(path.join(__dirname, '..', 'functions', 'api.js')).href);
   const waits = [];
   const call = async body => { const r = await onRequestPost({ request: { json: async () => body }, env, waitUntil: p => waits.push(p) }); await Promise.all(waits); return { status: r.status, body: await r.json() }; };
+  const scan = (texts, extra) => call({ token: 'tok', req: Object.assign({ action: 'scan', texts }, extra) });
 
   let r = await call({ token: 'bad', req: { action: 'load' } });
   assert.strictEqual(r.status, 403); assert.strictEqual(sent.length, 0);
@@ -38,22 +51,62 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
   r = await call({ password: 'pw', req: { action: 'load' } });
   assert.strictEqual(r.body.ok, true); assert.deepStrictEqual(sent.pop(), { token: 'tok', req: { action: 'load' } }, 'password swapped for the token, never forwarded');
   delete env.PASSWORD;
+  sent.length = 0;
 
+  // ---- no supplier secrets: a miss is forwarded to Apps Script and stored in D1
   const rec = { mpn: 'AC0402FR-072K2L', dkPn: '311-2.20KLRCT-ND', mouserPn: '', groupKey: 'R|2.2k|0402' };
   answer = () => ({ ok: true, data: { parsed: { qty: 5 }, rec, source: 'DigiKey', warnings: [] } });
-  r = await call({ token: 'tok', req: { action: 'scan', texts: ['AC0402FR-072K2L'], keys: ['ac0402fr072k2l'] } });
-  assert.strictEqual(r.body.data.source, 'DigiKey'); assert.strictEqual(sent.length, 2, 'miss is forwarded');
+  r = await scan(['AC0402FR-072K2L']);
+  assert.strictEqual(r.body.data.source, 'DigiKey'); assert.strictEqual(sent.length, 1, 'miss is forwarded');
+  assert.ok(tableMade, 'the table is created when the first read finds none');
   assert.deepStrictEqual(Object.keys(rows).sort(), ['311220klrctnd', 'ac0402fr072k2l'], 'stored under every part number');
 
-  r = await call({ token: 'tok', req: { action: 'scan', texts: ['311-2.20KLRCT-ND'], keys: ['311220klrctnd'] } });
-  assert.strictEqual(sent.length, 2, 'DigiKey PN of a part first seen by MPN is a hit');
-  r = await call({ token: 'tok', req: { action: 'scan', texts: ['x'], keys: ['nothing', 'ac0402fr072k2l'] } });
-  assert.strictEqual(sent.length, 2, 'hit answered without Apps Script');
-  assert.deepStrictEqual(r.body, { ok: true, data: { rec, source: 'cloud cache', warnings: [] } });
+  r = await scan(['311-2.20KLRCT-ND']);
+  assert.strictEqual(sent.length, 1, 'DigiKey PN of a part first seen by MPN is a hit');
+  r = await scan(['AC0402FR-072K2L']);
+  assert.strictEqual(sent.length, 1, 'hit answered without Apps Script');
+  assert.strictEqual(r.body.data.source, 'cloud cache'); assert.deepStrictEqual(r.body.data.rec, rec); assert.strictEqual(r.body.data.parsed.mpn, 'AC0402FR-072K2L');
 
   answer = () => ({ ok: true, data: { parsed: {}, rec: null, warnings: ['none'] } });
-  r = await call({ token: 'tok', req: { action: 'scan', texts: ['zz'], keys: ['zz'] } });
+  r = await scan(['zz']);
   assert.strictEqual(r.body.data.rec, null); assert.ok(!rows.zz, 'a miss is not cached');
+  r = await scan(['[)>06K3999721814K001POEPS070090 #IA-1265Q1951VHirose']);
+  assert.strictEqual(r.body.data.rec, null); assert.ok(/no part number/.test(r.body.data.warnings[0]), 'a Mouser 2D code with no PN is answered here, no lookup');
+  const forwarded = sent.length;
+
+  // ---- with supplier secrets: Apps Script is not involved in a scan at all
+  Object.assign(env, { DIGIKEY_CLIENT_ID: 'dkid', DIGIKEY_CLIENT_SECRET: 'dksecret-XYZ', MOUSER_KEY: 'mouser-KEY-123' });
+  Object.keys(rows).forEach(k => delete rows[k]);
+  r = await scan(['AC0402FR-072K2L']);
+  assert.strictEqual(sent.length, forwarded, 'direct lookup never calls Apps Script');
+  assert.strictEqual(r.body.data.source, 'DigiKey'); assert.strictEqual(r.body.data.rec.category, 'Resistors');
+  assert.ok(Object.keys(rows).includes('ac0402fr072k2l'), 'new part stored in D1');
+  const dkCall = supplier.find(c => /productdetails/.test(c.url));
+  assert.strictEqual(dkCall.o.headers.Authorization, 'Bearer tok-dk'); assert.strictEqual(dkCall.o.headers['X-DIGIKEY-Locale-Site'], 'IN');
+  const n1 = supplier.length;
+  r = await scan(['AC0402FR-072K2L']);
+  assert.strictEqual(supplier.length, n1, 'second scan is a D1 hit, no supplier call'); assert.strictEqual(r.body.data.source, 'cloud cache');
+
+  // DigiKey 404 for a Mouser-style part: keyword search, then the other supplier; candidates run side by side
+  Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0;
+  dkProduct = url => url.includes('productdetails') ? { code: 404 } : { code: 200, body: { Products: [] } };
+  r = await scan(['603-AC0402FR-072K2L'], { supplier: 'Mouser' });
+  assert.strictEqual(r.body.data.source, 'Mouser'); assert.strictEqual(r.body.data.rec.mouserPn, '603-AC0402FR-072K2L');
+  assert.ok(supplier.some(c => c.url.includes('mouser.com')));
+
+  // errors become warnings and never carry a key; a 429 is retried once
+  Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0;
+  let n429 = 0;
+  dkProduct = () => ++n429 === 1 ? { code: 429 } : { code: 200, body: fx('dk_AC0402FR-072K2L.json') };
+  r = await scan(['AC0402FR-072K2L']);
+  assert.strictEqual(r.body.data.source, 'DigiKey'); assert.strictEqual(n429, 2, 'one retry after 429');
+  Object.keys(rows).forEach(k => delete rows[k]);
+  dkProduct = () => ({ code: 500 }); mouser = () => ({ code: 200, body: { Errors: [{ Message: 'Invalid key mouser-KEY-123' }] } });
+  r = await scan(['NOPE-1']);
+  assert.strictEqual(r.body.data.rec, null); assert.ok(r.body.data.warnings.length >= 1);
+  const out = JSON.stringify(r.body);
+  ['dksecret-XYZ', 'mouser-KEY-123', 'tok-dk'].forEach(k => assert.ok(!out.includes(k), 'a secret leaked into the answer: ' + k));
+  assert.ok(!rows.nope1, 'a miss is not cached');
 
   answer = () => ({ ok: true, data: { row: {}, isNew: true } });
   r = await call({ token: 'tok', req: { action: 'confirm', qty: 1 } });

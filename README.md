@@ -13,7 +13,7 @@ Stash Tag keeps an inventory of electronic components bought from DigiKey and Mo
 ## Fast page on Cloudflare Pages (optional, free)
 1. Cloudflare dashboard > Workers & Pages > Create > Pages > connect this GitHub repo. Build command `node tools/build_web.js`, build output directory `web`.
 2. Storage & Databases > D1 > create a database (e.g. `stash-tag`). In the Pages project: Settings > Bindings > add D1 database, variable name `DB`. The table is created on first use.
-3. Pages project > Settings > Variables and Secrets: secret `TOKEN` (same value as the Script property), `EXEC_URL` (the web app /exec URL) and, optionally, `PASSWORD` (one shared admin password). Redeploy the Pages project after adding or changing any of them.
+3. Pages project > Settings > Variables and Secrets: secret `TOKEN` (same value as the Script property), `EXEC_URL` (the web app /exec URL) and, optionally, `PASSWORD` (one shared admin password). To let the Function look parts up itself (no Apps Script on a scan), also add the secrets `DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET` and `MOUSER_KEY` (the same values as the Script properties). Redeploy the Pages project after adding or changing any of them.
 4. With `PASSWORD` set: open `https://<project>.pages.dev/` and sign in; the browser remembers the password. Without it: open `https://<project>.pages.dev/#t=<TOKEN>` once; the page remembers the token and removes it from the address bar.
 
 ## Sheets

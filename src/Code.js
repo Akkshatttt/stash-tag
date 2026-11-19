@@ -1,5 +1,5 @@
 // Entry points. Plain GET = health check; ?page=app&t=<token> = the phone web app. The page calls invCall() through google.script.run.
-// Server work per click: load = 1 cache read; scan = 1 cache read (API only on a miss); confirm = 1 find + 1 read + 2 writes. Search runs in the page.
+// Server work per click: load = 2 cache reads; scan = 1 cache read (API only on a miss); confirm = lock + 1 row read + 2 writes + a small cache patch. Search runs in the page.
 
 function doGet(e) {
   var q = (e && e.parameter) || {};
@@ -20,7 +20,7 @@ function clientLib_() {
   return Object.keys(vars).map(function (n) { return 'var ' + n + '=' + JSON.stringify(vars[n]) + ';'; }).join('\n') + '\n' +
     [squash, normPn, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_,
       parseLabel_, looksLikeSupplierPn_, guessSupplier_, mergeLabels_, partKeys_, labelStrip_, mouserRead_].map(String).join('\n') +
-    '\nvar MOUSER_BARS=' + JSON.stringify(MOUSER_BARS) + ';';
+    '\nvar MOUSER_BARS=' + JSON.stringify(MOUSER_BARS) + ';\nvar MOUSER_PN=' + String(MOUSER_PN) + ';';
 }
 
 /** JSON API for the static page (Cloudflare Pages forwards /api here). Body: {token, req} -> {ok, data} or {ok:false, error}. */
@@ -35,52 +35,56 @@ function doPost(e) {
 function invCall(token, req) {
   var tok = prop_('TOKEN');
   if (!tok || token !== tok) throw new Error('forbidden');
-  var ss = getSs();
-  if (req.action === 'load') return { rows: loadInventory_(ss) };
-  if (req.action === 'scan') return scan_(ss, req.texts || req.text, req.supplier);
-  if (req.action === 'confirm') return locked_(function () { return confirm_(ss, req); });
+  if (req.action === 'load') return { rows: loadInventory_() };
+  if (req.action === 'scan') return scan_(req.texts || req.text, req.supplier);
+  if (req.action === 'confirm') return confirm_(req);
   throw new Error('unknown action');
 }
 
 /** Parse the scanned text and look the part up (cache, then APIs). Writes nothing but the product cache. The page knows what is already stocked. */
-function scan_(ss, text, supplier) {   // text: one string (typed) or an array of every barcode read from a photo / video frame; supplier: scan mode
+function scan_(text, supplier) {   // text: one string (typed) or an array of every barcode read from a photo / video frame; supplier: scan mode
   var parsed = mergeLabels_([].concat(text), supplier);
-  if (!parsed.mpn && !parsed.supplierPn) return { parsed: parsed, rec: null, warnings: [parsed.fields && (parsed.fields.Q || parsed.fields['1V'])
-    ? 'This 2D code has no part number (Mouser labels never do). Scan the part-number barcode on the label, or type the part number.' + (parsed.fields['1V'] ? ' Manufacturer: ' + parsed.fields['1V'] + '.' : '')
-    : 'Nothing readable in that scan. Type the part number instead.'] };
-  var found = lookupPart_(parsed, function (keys) { return productGet_(ss, keys); }, function (rec, queried) { productPut_(ss, rec, queried); });
+  if (!parsed.mpn && !parsed.supplierPn) return { parsed: parsed, rec: null, warnings: [noPartWarning_(parsed)] };
+  var found = lookupPart_(parsed, productGet_, productPut_);
   return { parsed: parsed, rec: found.rec, source: found.source, warnings: found.warnings };
 }
 
 var REC_FIELDS = ['supplier', 'mpn', 'manufacturer', 'description', 'datasheet', 'dkPn', 'mouserPn', 'categoryPath', 'category', 'value', 'package', 'spec', 'groupKey'];
 
-/** Adds stock. The page sends back the record from scan (so a wrong category can be fixed by hand); only known fields are kept, as plain strings. */
-function confirm_(ss, req) {
+/** Adds stock. The page sends back the record from scan (so a wrong category can be fixed by hand); only known fields are kept, as plain strings.
+ *  Checks and the timestamp happen before the lock; the lock covers only row read, row write, log line and the small cache patch. */
+function confirm_(req) {
   var rec = {};
   REC_FIELDS.forEach(function (k) { rec[k] = squash(req.rec && req.rec[k]); });
   var qty = Math.floor(num(req.qty));
   if (!(qty >= 1) || qty > 1000000) throw new Error('Quantity must be a whole number of at least 1.');
   if (CATEGORIES.indexOf(rec.category) < 0) throw new Error('Unknown category.');
   if (!rec.groupKey || !rec.mpn) throw new Error('Missing part data. Scan again.');
-  var sh = sheetOf_(ss, rec.category), now = nowStr_(ss), at = findRow_(sh, 1, rec.groupKey);
-  var rows = at ? [readRow_(sh, COLUMNS, at)] : [];
-  var row = upsertRow_(rows, rec, qty, squash(req.location), now);
-  writeRows_(sh, COLUMNS, [row]);
-  writeRows_(sheetOf_(ss, 'Log'), LOG_COLUMNS, [{ time: now, category: rec.category, groupKey: rec.groupKey, mpn: rec.mpn, supplier: rec.supplier, delta: qty,
-    location: squash(req.location), lot: squash(req.lot), note: 'scan add' }]);
-  var pub = publicRow_(row, rec.category);
-  snapshotPatch_(pub);
-  return { row: pub, isNew: !!row._new };
+  var now = nowStr_(), location = squash(req.location), lot = squash(req.lot);
+  return locked_(function () {
+    var sh = sheetOf_(rec.category), at = rowHint_(rec.category, rec.groupKey), rows = [];
+    if (at) { var old = readRow_(sh, COLUMNS, at); if (old.groupKey === rec.groupKey) rows = [old]; }   // remembered row, verified by its key
+    if (!rows.length && (at = findRow_(sh, 1, rec.groupKey))) rows = [readRow_(sh, COLUMNS, at)];
+    var row = upsertRow_(rows, rec, qty, location, now);
+    writeRows_(sh, COLUMNS, [row]);
+    rowRemember_(rec.category, rec.groupKey, row._row);
+    writeRows_(sheetOf_('Log'), LOG_COLUMNS, [{ time: now, category: rec.category, groupKey: rec.groupKey, mpn: rec.mpn, supplier: rec.supplier, delta: qty,
+      location: location, lot: lot, note: 'scan add' }]);
+    var pub = publicRow_(row, rec.category);
+    snapshotPatch_(pub);
+    return { row: pub, isNew: !!row._new };
+  });
 }
 
 // ---- one-time setup (run from the editor). Idempotent: safe to run again after a release that adds columns.
 function setup() {
   var ss = getSs();
+  props_ = null;   // forget the per-execution property copy
   CATEGORIES.forEach(function (c) { ensureSheet_(ss, c, COLUMNS); });
   ensureSheet_(ss, 'Log', LOG_COLUMNS);
   ensureSheet_(ss, 'Cache', CACHE_COLUMNS).hideSheet();
   var tok = prop_('TOKEN');
-  if (!tok) { tok = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''); PropertiesService.getScriptProperties().setProperty('TOKEN', tok); }
+  if (!tok) { tok = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''); PropertiesService.getScriptProperties().setProperty('TOKEN', tok); props_ = null; }
   Logger.log('Setup done. Open the web app with ?page=app&t=<TOKEN> (TOKEN is in Project Settings > Script properties).');
 }
 

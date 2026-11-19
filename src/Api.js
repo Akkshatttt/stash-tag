@@ -2,17 +2,18 @@
 // (mouser_lookup.py, test_digikey.py, test_digikey_xlsx.py). Keys live in Script properties and are never logged or returned:
 //   DIGIKEY_CLIENT_ID, DIGIKEY_CLIENT_SECRET, MOUSER_KEY
 
-function prop_(k) { return PropertiesService.getScriptProperties().getProperty(k) || ''; }
+var props_ = null;   // all Script properties, read once per execution (every read is a service call)
+function prop_(k) { if (!props_) props_ = PropertiesService.getScriptProperties().getProperties(); return props_[k] || ''; }
 
 /** UrlFetchApp with HTTP errors returned (not thrown) and a short backoff on 429/5xx. -> {code, body (parsed JSON or null), text} */
 function fetchJson_(url, opts) {
   opts = Object.assign({ muteHttpExceptions: true }, opts);
   var r, text;
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 2; i++) {   // one retry only: a person is waiting on this click
     r = UrlFetchApp.fetch(url, opts);
     var c = r.getResponseCode();
     if (c !== 429 && c < 500) break;
-    Utilities.sleep(1000 * Math.pow(2, i));
+    if (i === 0) Utilities.sleep(1000);
   }
   text = r.getContentText();
   var body = null;

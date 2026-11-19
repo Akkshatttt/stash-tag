@@ -15,7 +15,7 @@ const props = { DIGIKEY_CLIENT_ID: 'id', DIGIKEY_CLIENT_SECRET: 'sec', MOUSER_KE
 const cacheStore = {};
 const S = loadSrc({
   UrlFetchApp: { fetch: (url, o) => { fetches.push({ url, o }); const r = responder(url, o); return { getResponseCode: () => r.code, getContentText: () => r.text }; } },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperties: () => Object.assign({}, props) }) },
   CacheService: { getScriptCache: () => ({ get: k => cacheStore[k] || null, put: (k, v) => { cacheStore[k] = v; }, remove: k => { delete cacheStore[k]; } }) },
   Utilities: { sleep: () => {} }
 });
@@ -70,6 +70,19 @@ t('Mouser mode: customer P/N in the 2D code, vertical label code and field bars 
   p = S.mergeLabels_(['[)>␞06␝KEPS␠PD␠V2␝14K008␝1PBSC030P03NS3GAUMA1␝Q44␝11K086097937␝4LAT␝1VInfineon␞␄'], 'Mouser');
   assert.deepStrictEqual([p.mpn, p.qty, p.supplier], ['BSC030P03NS3GAUMA1', 44, 'Mouser'], '2D with 1P is enough');
   assert.strictEqual(S.mergeLabels_(['[)>␞06␝P1-ND␝1PX␝30P1-ND'], 'Mouser').supplier, 'DigiKey', 'a DigiKey label in Mouser mode stays DigiKey');
+});
+t('Mouser mode: only a Mouser-pattern bar is trusted; a guessed MPN is flagged, garbage bars are not used at all', () => {
+  const two = '[)>\x1e06\x1dK1\x1d14K001\x1dPCUST1\x1dQ6\x1d1VHirose';
+  let p = S.mergeLabels_([two, '511-STM32H755ZIT6'], 'Mouser');
+  assert.strictEqual(p.supplierPn, '511-STM32H755ZIT6'); assert.ok(!p.loose, 'strict pattern: not flagged');
+  p = S.mergeLabels_([two, 'STM32H755ZIT6'], 'Mouser');
+  assert.strictEqual(p.mpn, 'STM32H755ZIT6'); assert.strictEqual(p.loose, true, 'a bar guessed as the MPN is flagged for the page');
+  ['A1', 'AB', 'x y z 12', '12', '5-1'].forEach(g => {   // too short, spaced, digits only, wrong prefix: no part number from it
+    p = S.mergeLabels_([two, g], 'Mouser');
+    assert.ok(!p.supplierPn, 'not a Mouser PN: ' + g); assert.ok(!p.mpn, 'not guessed as an MPN: ' + g);
+  });
+  p = S.mergeLabels_(['STM32H755ZIT6'], 'DigiKey');
+  assert.ok(!p.loose, 'a plain typed part number is never flagged');
 });
 t('labelStrip_ samples a rotated strip along the 2D code axes', () => {
   const W = 40, H = 40, d = new Uint8ClampedArray(W * H * 4).fill(255);
@@ -174,7 +187,7 @@ t('DigiKey: 404 falls back to keyword search and strips -T', () => {
 t('DigiKey: 429 is retried, 401 raises a readable error', () => {
   Object.keys(cacheStore).forEach(k => delete cacheStore[k]);
   let n = 0;
-  responder = url => url.includes('oauth2') ? tokenReply : (++n < 3 ? { code: 429, text: '' } : { code: 200, text: JSON.stringify(fx('dk_AC0402FR-072K2L.json')) });
+  responder = url => url.includes('oauth2') ? tokenReply : (++n < 2 ? { code: 429, text: '' } : { code: 200, text: JSON.stringify(fx('dk_AC0402FR-072K2L.json')) });
   assert.ok(S.dkLookup_('X'));
   responder = url => url.includes('oauth2') ? tokenReply : { code: 401, text: '' };
   assert.throws(() => S.dkLookup_('X'), /401/);
@@ -186,7 +199,7 @@ t('Mouser: exact match only', () => {
 });
 t('lookupPart_: cache first by any label number, label supplier next, errors become warnings, hits are stored', () => {
   Object.keys(cacheStore).forEach(k => delete cacheStore[k]);
-  props.MOUSER_KEY = '';
+  props.MOUSER_KEY = ''; S.props_ = null;   // properties are read once per execution; each test is a new one
   fetches = []; responder = () => ({ code: 404, text: '{}' });
   const mem = {}, get = ks => ks.map(k => mem[k]).filter(Boolean)[0] || null, put = (r, ks) => ks.forEach(k => { mem[k] = r; });
   const miss = S.lookupPart_(S.parseLabel_('NOPE123'), get, put);
@@ -194,7 +207,7 @@ t('lookupPart_: cache first by any label number, label supplier next, errors bec
   mem['ac0402fr072k2l'] = { mpn: 'AC0402FR-072K2L' }; fetches = [];
   const hit = S.lookupPart_(S.parseLabel_('[)>06P603-OTHER1PAC0402FR-072K2L'), get, put);
   assert.strictEqual(hit.source, 'cache'); assert.strictEqual(fetches.length, 0);
-  props.MOUSER_KEY = 'mk';
+  props.MOUSER_KEY = 'mk'; S.props_ = null;
   Object.keys(cacheStore).forEach(k => delete cacheStore[k]);
   responder = url => url.includes('oauth2') ? tokenReply : { code: 200, text: JSON.stringify(fx('dk_AC0402FR-072K2L.json')) };
   const got = S.lookupPart_(S.parseLabel_('AC0402FR-072K2L'), () => null, put);

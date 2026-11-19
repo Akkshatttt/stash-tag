@@ -103,8 +103,8 @@ function makeDecoder_(zx) {
 
 /** zxing-wasm (zxing-cpp compiled to WebAssembly): handles perspective, glare, many symbols and full resolution far better than the JS port.
  *  wasm = the ZXingWASM global in the page or require('zxing-wasm/reader') in Node; imageData = {width, height, data} RGBA. Promise of [{text, format}]. */
-function decodeWasm_(wasm, imageData, fast, formats) {   // formats: DigiKey mode passes ['DataMatrix'] (much faster); default reads everything
-  return wasm.readBarcodes(imageData, { formats: formats || ['DataMatrix', 'Code128', 'Code39', 'QRCode', 'PDF417'], tryHarder: !fast, tryRotate: true, tryInvert: !fast, tryDownscale: true, maxNumberOfSymbols: 16 })
+function decodeWasm_(wasm, imageData, fast, formats, harder) {   // formats: DigiKey mode passes ['DataMatrix'] (much faster); default reads everything; harder: tryHarder even when fast
+  return wasm.readBarcodes(imageData, { formats: formats || ['DataMatrix', 'Code128', 'Code39', 'QRCode', 'PDF417'], tryHarder: harder || !fast, tryRotate: true, tryInvert: !fast, tryDownscale: true, maxNumberOfSymbols: 16 })
     .then(function (rs) { return rs.filter(function (r) { return r.isValid !== false && r.text; }).map(function (r) { return { text: r.text, format: r.format, position: r.position }; }); });
 }
 
@@ -130,25 +130,44 @@ function labelStrip_(img, tl, a, s, v, k) {
   return { width: w, height: h, data: out };
 }
 
-/** Mouser mode: read the 2D code; if it has no manufacturer PN (orders with a customer P/N replace 1P by P), read the 1D bars as thin deskewed
- *  strips anchored on the 2D code, top to bottom, Code128 only, stopping at the first Mouser PN (NNN-...). Without a 2D code: plain 1D read.
- *  Promise of [{text, format}]. Low compute: a few small strips instead of the whole photo at full resolution. */
+var MOUSER_PN = /^\d{2,4}-\S+$/;   // Mouser's own part number as printed in the long 1D bar, e.g. 511-STM32H755ZIT6
+
+/** Mouser mode. The 2D code is read first (hard, so tryHarder even in live video). If it names the part (1P) we are done. Otherwise the part number
+ *  is the long Code128 bar: read every Code128 over the whole frame at its native size and take the one nearest the 2D code (the flow of invscan's
+ *  app.js), and only if none matches Mouser's NNN-... pattern read the 2D-anchored deskewed strips. Without a 2D code: plain 1D read.
+ *  Promise of [{text, format}]; the array carries .dbg (what happened) for the page's debug line. */
 function mouserRead_(wasm, img, fast) {
-  return decodeWasm_(wasm, img, fast, ['DataMatrix']).then(function (dm) {
+  var t0 = Date.now(), dbg = { w: img.width, h: img.height };
+  var done = function (list) { dbg.ms = Date.now() - t0; list.dbg = dbg; return list; };
+  return decodeWasm_(wasm, img, fast, ['DataMatrix'], true).then(function (dm) {
     var two = dm.filter(function (r) { return r.text.indexOf('[)>') >= 0; })[0];
-    if (!two || !two.position) return decodeWasm_(wasm, img, fast, ['Code128', 'DataMatrix']);
-    if (/[\x1d␝]1P[^\x1d␝\x1e␞]/.test(two.text)) return [two];   // 2D already names the part
+    dbg.dm = !!(two && two.position);
+    if (!two || !two.position) return decodeWasm_(wasm, img, fast, ['Code128', 'DataMatrix'], true).then(function (rs) { dbg.stage = 'plain'; dbg.c128 = rs.length; return done(rs); });
+    if (/[\x1d␝]1P[^\x1d␝\x1e␞]/.test(two.text)) { dbg.stage = '2d'; return done([two]); }   // 2D already names the part
     var P = two.position, tl = P.topLeft, a = Math.atan2(P.topRight.y - tl.y, P.topRight.x - tl.x), s = Math.sqrt(Math.pow(P.topRight.x - tl.x, 2) + Math.pow(P.topRight.y - tl.y, 2));
-    var L = MOUSER_BARS, k = Math.max(1, L.px / s), found = [two], seen = {}, rows = [];
-    for (var v = L.v0; v < L.v1; v += L.step) rows.push(v);
-    function next(i) {
-      if (i >= rows.length) return found;
-      return wasm.readBarcodes(labelStrip_(img, tl, a, s, rows[i], k), { formats: ['Code128'], tryHarder: true, tryRotate: false, maxNumberOfSymbols: 2 }).then(function (rs) {
-        var hit = false;
-        rs.forEach(function (r) { if (r.text && r.isValid !== false && !seen[r.text]) { seen[r.text] = 1; found.push({ text: r.text, format: r.format }); if (/^\d{2,3}-\S+/.test(r.text)) hit = true; } });
-        return hit ? found : next(i + 1);
-      });
-    }
-    return next(0);
+    var mid = function (p) { return { x: (p.topLeft.x + p.bottomRight.x) / 2, y: (p.topLeft.y + p.bottomRight.y) / 2 }; }, c0 = mid(P);
+    dbg.ang = Math.round(a * 180 / Math.PI); dbg.size = Math.round(s);
+    return decodeWasm_(wasm, img, fast, ['Code128'], true).then(function (bars) {
+      dbg.c128 = bars.length;
+      var near = bars.map(function (r) { var m = r.position ? mid(r.position) : c0; return { r: r, d: Math.hypot(m.x - c0.x, m.y - c0.y) }; })
+        .filter(function (x) { return x.d <= 9 * s; }).sort(function (x, y) { return x.d - y.d; }).map(function (x) { return x.r; });
+      var found = [two].concat(near), seen = {};
+      near.forEach(function (r) { seen[r.text] = 1; });
+      var pn = near.filter(function (r) { return MOUSER_PN.test(r.text); })[0];
+      if (pn) { dbg.stage = 'full'; dbg.pn = pn.text; return done(found); }
+      var L = MOUSER_BARS, k = Math.max(1, L.px / s), rows = [];
+      for (var v = L.v0; v < L.v1; v += L.step) rows.push(v);
+      dbg.stage = 'strips'; dbg.strips = 0;
+      function next(i) {
+        if (i >= rows.length) return done(found);
+        dbg.strips = i + 1;
+        return wasm.readBarcodes(labelStrip_(img, tl, a, s, rows[i], k), { formats: ['Code128'], tryHarder: true, tryRotate: false, maxNumberOfSymbols: 2 }).then(function (rs) {
+          var hit = false;
+          rs.forEach(function (r) { if (r.text && r.isValid !== false && !seen[r.text]) { seen[r.text] = 1; found.push({ text: r.text, format: r.format }); if (MOUSER_PN.test(r.text)) { hit = true; dbg.pn = r.text; } } });
+          return hit ? done(found) : next(i + 1);
+        });
+      }
+      return next(0);
+    });
   });
 }

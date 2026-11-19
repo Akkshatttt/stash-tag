@@ -41,5 +41,19 @@ const MUST = {
       if (MUST[key]) { n++; Object.keys(MUST[key]).forEach(k => assert.strictEqual(p[k], MUST[key][k], key + ' ' + k)); }
     }
   }
+  // The phone is not held like the test photos: the same Mouser label turned 90/180/270 degrees or tilted a few degrees, and read the way live
+  // video reads it (fast), must still give the part number. Rotated and tilted copies are made here from the real photos.
+  for (const f of Object.keys(MUST).filter(k => /^mouser\/WhatsApp/.test(k) && MUST[k].supplierPn)) {
+    for (const deg of [90, 180, 270, 4, -4]) {
+      for (const fast of [false, true]) {
+        const base = await Jimp.read(path.join(root, f)), img = base.rotate(deg);
+        const id = { width: img.bitmap.width, height: img.bitmap.height, data: new Uint8ClampedArray(img.bitmap.data) };
+        const rs = await S.mouserRead_(wasm, id, fast), p = S.mergeLabels_(rs.map(r => r.text), 'Mouser');
+        console.log(f.slice(-28), deg + 'deg', fast ? 'fast' : 'full', rs.dbg.stage, rs.dbg.ms + 'ms', p.supplierPn);
+        assert.strictEqual(p.supplierPn, MUST[f].supplierPn, f + ' turned ' + deg + (fast ? ' (fast)' : ''));
+        n++;
+      }
+    }
+  }
   console.log('decode ok (' + n + ' checked)');
 })().catch(e => { console.error(e); process.exit(1); });

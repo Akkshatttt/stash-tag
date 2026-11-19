@@ -2,7 +2,14 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
-## 0.6.0 (unreleased)
+## 0.7.0 (unreleased)
+- **Changed (speed):** a button press now runs only what it needs. Confirm: the row number is remembered in CacheService and verified by reading that one row (no scan of the sheet); the lock covers only the row write, the log line and a small cache patch; the inventory cache is one set of chunks per category (a confirm rewrites one category, not the whole inventory); no spreadsheet call for the time zone; the spreadsheet is opened only when a sheet is needed; Script properties are read once per execution; a new Cache-sheet row is found with one key-column read; one retry (not two) on a supplier 429/5xx.
+- **New (speed):** a scan is answered by the Cloudflare Function without Apps Script: it parses the label, asks D1, and on a miss calls DigiKey and Mouser itself (first two candidates side by side), then stores the part in D1. Needs the Pages secrets `DIGIKEY_CLIENT_ID`, `DIGIKEY_CLIENT_SECRET`, `MOUSER_KEY`; without them a scan is forwarded to Apps Script as before. The D1 table is created on first use, not on every cold isolate.
+- **New (Mouser scan):** the Mouser P/N bar is read the way invscan does it: 2D code, then every Code128 over the whole frame at the camera's native size, nearest to the 2D code, strict `NNN-...` pattern; the strips stay as the fallback. Live asks the camera for 4K with continuous focus and no longer downscales Mouser frames; photos keep up to 4096 px and are turned upright by EXIF. Tested on the user's photos turned 90/180/270 degrees and tilted 4 degrees, normal and live (fast) mode.
+- **New:** a bar that only looks like an MPN (no `NNN-` pattern) is flagged "Unverified" on the card; live needs two frames to agree on a bar before it looks anything up.
+- **New:** "Show debug info" under the Add stock card (and in the live view): decoder state, frame size, 2D found, stage (2d / full / strips), Code128 count, strips tried, part number, milliseconds. The wasm decoder is warmed up at page load so a load failure shows at once.
+
+## 0.6.0 (released)
 - **New:** DigiKey | Mouser scan mode on the Add stock card and in the live camera, remembered on the phone and sent with each scan.
 - **Changed:** DigiKey mode reads only the Data Matrix (faster; live asks as soon as the label shows a part number, no one-second wait).
 - **New:** Mouser mode reads the 2D code; when it has no manufacturer PN (orders with a customer P/N replace 1P by P), it reads the 1D bars as thin strips anchored on the 2D code, deskewed by its angle and scaled in one pass (`mouserRead_`, `labelStrip_` in Decode.js). The user's three real Mouser photos now give the Mouser P/N in 0.04-0.21 s each; before, 2 of 3 failed.

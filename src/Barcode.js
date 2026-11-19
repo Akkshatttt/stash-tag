@@ -57,13 +57,20 @@ function mergeLabels_(texts, hint) {   // hint: 'DigiKey' or 'Mouser' from the p
   one.map(squash).forEach(function (t) {
     if (!t || skip[t] || /^\d+$/.test(t) || t.length < 3 || /\s/.test(t) && t.length > 40) return;   // order/line/qty/invoice digits, country codes
     if (hint === 'Mouser' && !/^\d{2,3}-/.test(t) && /^\d{2,3}[A-Z0-9]{3,4}$/.test(t)) return;   // Mouser's vertical label code (467MRL, 43EX5W)
-    if (/^\d{2,3}-\S+/.test(t) && !out.supplierPn) { out.supplierPn = t; out.supplier = out.supplier || 'Mouser'; }
-    else if (/[A-Za-z]/.test(t) && /\d/.test(t) && !out.mpn) out.mpn = t;
+    if (/^\d{2,4}-\S+$/.test(t) && !out.supplierPn) { out.supplierPn = t; out.supplier = out.supplier || 'Mouser'; }
+    else if (/[A-Za-z]/.test(t) && /\d/.test(t) && t.length >= 4 && !/\s/.test(t) && !out.mpn) { out.mpn = t; if (hint === 'Mouser') out.loose = true; }   // loose: a bar guessed to be the MPN; the page asks the user to check it
     else alts.push(t);
   });
   out.alts = alts.slice(0, 2);
   if (!out.supplier) guessSupplier_(out, out.supplierPn || out.mpn);
   return out;
+}
+
+/** What to tell the user when a scan has nothing to search (shared by Apps Script and the Cloudflare Function). */
+function noPartWarning_(parsed) {
+  return parsed.fields && (parsed.fields.Q || parsed.fields['1V'])
+    ? 'This 2D code has no part number (Mouser labels never do). Scan the part-number barcode on the label, or type the part number.' + (parsed.fields['1V'] ? ' Manufacturer: ' + parsed.fields['1V'] + '.' : '')
+    : 'Nothing readable in that scan. Type the part number instead.';
 }
 
 /** Parsed label -> lookup candidates in the order to try, and the normalised cache keys. Shared by Apps Script and the page (the page sends

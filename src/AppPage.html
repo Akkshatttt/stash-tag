@@ -90,7 +90,7 @@ function loadInv() {
 }
 function stocked(rec) { return (st.inv || []).filter(function (r) { return r.category === rec.category && r.groupKey === rec.groupKey; })[0] || null; }
 var st = { scan: null, msg: '', inv: null };       // last server answers
-var ui = { text: '', qty: '', location: '', category: '', lot: '', query: '', sort: '', dir: 'asc', cat: '', sup: store('supplier') === 'Mouser' ? 'Mouser' : 'DigiKey' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+var ui = { dbg: store('debug') === true, text: '', qty: '', location: '', category: '', lot: '', query: '', sort: '', dir: 'asc', cat: '', sup: store('supplier') === 'Mouser' ? 'Mouser' : 'DigiKey' };   // what the user typed; typing never redraws (keeps the phone keyboard open)
 
 function el(tag, props, kids) {
   var e = document.createElement(tag);
@@ -128,14 +128,35 @@ function decodeImageData(id, fast, done) {   // done(array of every barcode text
   if (typeof ZXingWASM === 'undefined' || wasmFailed) return js();
   // DigiKey: the Data Matrix holds everything, read nothing else. Mouser: 2D code, then the 1D bars it points to (mouserRead_, Decode.js).
   var read = ui.sup === 'Mouser' ? mouserRead_(ZXingWASM, id, fast) : decodeWasm_(ZXingWASM, id, fast, ['DataMatrix']);
-  read.then(function (rs) { if (rs.length || fast) done(texts(rs)); else js(); },
+  read.then(function (rs) { st.dbg = rs.dbg || { w: id.width, h: id.height }; if (rs.length || fast) done(texts(rs)); else js(); },
     function (e) { wasmFailed = true; st.wasmError = String(e && e.message || e); js(); });
 }
-function decodeFile(file, done) {
-  var url = URL.createObjectURL(file), img = new Image();
-  img.onload = function () { var id = toImageData(img, img.width, img.height, 3000); URL.revokeObjectURL(url); decodeImageData(id, false, done); };
-  img.onerror = function () { done([]); };
-  img.src = url;
+function decodeFile(file, done) {   // the camera app's full-resolution photo, turned upright by its EXIF tag, up to 4096 px on the long side
+  var viaImg = function () {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () { var id = toImageData(img, img.width, img.height, 4096); URL.revokeObjectURL(url); decodeImageData(id, false, done); };
+    img.onerror = function () { done([]); };
+    img.src = url;
+  };
+  if (typeof createImageBitmap !== 'function') return viaImg();
+  createImageBitmap(file, { imageOrientation: 'from-image' }).then(function (bm) {
+    var id = toImageData(bm, bm.width, bm.height, 4096); if (bm.close) bm.close();
+    decodeImageData(id, false, done);
+  }, viaImg);
+}
+// Load the wasm decoder now (compiles once, and tells at once if it cannot load in this page) instead of on the first scan.
+if (typeof ZXingWASM !== 'undefined') ZXingWASM.readBarcodes({ width: 1, height: 1, data: new Uint8ClampedArray(4) }, { formats: ['DataMatrix'] })
+  .then(function () { st.wasmReady = true; }, function (e) { wasmFailed = true; st.wasmError = String(e && e.message || e); });
+function dbgText() {   // one line for "Show debug info": what the decoder did on the last photo or frame
+  var d = st.dbg || {}, b = ['decoder ' + (wasmFailed ? 'FAILED: ' + (st.wasmError || '?') : typeof ZXingWASM === 'undefined' ? 'script not loaded' : st.wasmReady ? 'ready' : 'loading')];
+  if (d.w) b.push(d.w + 'x' + d.h);
+  if (d.stage) b.push('stage ' + d.stage);
+  if (d.dm !== undefined) b.push('2D ' + (d.dm ? 'found' : 'not found') + (d.size ? ' (' + d.size + 'px, ' + d.ang + ' deg)' : ''));
+  if (d.c128 !== undefined) b.push(d.c128 + ' 1D read');
+  if (d.strips) b.push(d.strips + ' strips');
+  if (d.pn) b.push('P/N ' + d.pn);
+  if (d.ms !== undefined) b.push(d.ms + ' ms');
+  return b.join(' | ');
 }
 
 function applyScan(r) {   // a scan answer becomes the part card (typed, photo and live scans all end here)
@@ -164,15 +185,15 @@ function stopLive() {
 }
 function startLive() {
   if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { st.msg = 'Error: live camera is not available here. Use the photo button.'; return render(); }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }).then(function (stream) {
-    var video = el('video', { autoplay: true, muted: true }), status = el('div', { className: 'small', text: 'Point at the label. Reading...' }), popup = el('div', {});
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, advanced: [{ focusMode: 'continuous' }] }, audio: false }).then(function (stream) {
+    var video = el('video', { autoplay: true, muted: true }), status = el('div', { className: 'small', text: 'Point at the label. Reading...' }), popup = el('div', {}), dbgEl = el('div', { className: 'small' });
     video.setAttribute('playsinline', ''); video.srcObject = stream;
     var close = el('button', { className: 'sec', text: 'Close camera' }); close.addEventListener('click', function () { stopLive(); render(); });
     var box = liveBox(); box.innerHTML = ''; box.style.display = 'block';
     var mode = el('div', {}), drawMode = function () { mode.innerHTML = ''; mode.appendChild(supSwitch(function () { if (live) { liveReset('Point at the label. Reading...'); drawMode(); } })); };
     drawMode();
-    [el('div', { className: 'big', text: 'Live scan' }), mode, video, status, popup, close].forEach(function (c) { box.appendChild(c); });
-    live = { stream: stream, video: video, status: status, popup: popup, seen: {}, firstAt: 0, asking: false, paused: false, stop: false };
+    [el('div', { className: 'big', text: 'Live scan' }), mode, video, status, dbgEl, popup, close].forEach(function (c) { box.appendChild(c); });
+    live = { stream: stream, video: video, status: status, dbgEl: dbgEl, popup: popup, seen: {}, firstAt: 0, asking: false, paused: false, stop: false };
     if (video.play) video.play();
     liveTick();
   }, function (e) { st.msg = 'Error: live camera blocked (' + (e && e.name) + ': ' + (e && e.message) + '). Use the photo button.'; render(); });
@@ -181,17 +202,21 @@ function liveReset(msg) { live.seen = {}; live.firstAt = 0; live.asking = false;
 function liveTick() {
   var l = live;
   if (!l || l.stop) return;
-  var v = l.video, next = function () { setTimeout(liveTick, 120); };
+  var v = l.video, next = function () { setTimeout(liveTick, 160); };
   if (l.paused || l.asking || !v.videoWidth) return next();
-  // DigiKey frames are shrunk (the Data Matrix is big); Mouser frames stay full size so the thin 1D bars keep their modules.
-  decodeImageData(toImageData(v, v.videoWidth, v.videoHeight, ui.sup === 'Mouser' ? 1920 : 1280), true, function (texts) {
+  // DigiKey frames are shrunk (the Data Matrix is big); Mouser frames stay at the camera's own size (up to 4K) so the thin 1D bars keep their modules.
+  decodeImageData(toImageData(v, v.videoWidth, v.videoHeight, ui.sup === 'Mouser' ? 3840 : 1280), true, function (texts) {
     if (l.stop || l.paused) return;
-    texts.forEach(function (t) { l.seen[t] = 1; });   // bars add up over frames
-    var all = Object.keys(l.seen), now = Date.now();
-    if (all.length && !l.firstAt) l.firstAt = now;
-    if (all.length && hasPn(all)) return liveAsk(next);   // asks the server only once the label shows a part number
-    if (all.length) l.status.textContent = 'Read ' + all.length + ' barcode(s), looking for the part number...';
-    var pick = all.length && now - l.firstAt > 6000 ? pickList(all) : [];
+    var once = {};
+    texts.forEach(function (t) { if (!once[t]) { once[t] = 1; l.seen[t] = (l.seen[t] || 0) + 1; } });   // frames each text was read in
+    if (ui.dbg) l.dbgEl.textContent = dbgText();
+    var every = Object.keys(l.seen), now = Date.now();
+    // Mouser: a bar counts once two frames agree on it (a smeared frame can read part of a bar); the 2D code carries a checksum, once is enough.
+    var all = ui.sup === 'Mouser' ? every.filter(function (t) { return l.seen[t] >= 2 || t.indexOf('[)>') >= 0; }) : every;
+    if (every.length && !l.firstAt) l.firstAt = now;
+    if (all.length && hasPn(all)) return liveAsk(all, next);   // asks the server only once the label shows a part number
+    if (every.length) l.status.textContent = 'Read ' + every.length + ' barcode(s), looking for the part number...';
+    var pick = every.length && now - l.firstAt > 6000 ? pickList(every) : [];
     if (pick.length) return livePick(pick, next);
     next();
   });
@@ -206,8 +231,8 @@ function livePick(pick, next) {   // no part number after a few seconds: let the
     return b;
   }).concat([(function () { var b = el('button', { className: 'primary', text: 'Keep scanning' }); b.addEventListener('click', function () { liveReset('Point at the label. Reading...'); next(); }); return b; })()])));
 }
-function liveAsk(next) {
-  var l = live, texts = Object.keys(l.seen);
+function liveAsk(texts, next) {
+  var l = live;
   l.asking = true; l.status.textContent = 'Read ' + texts.length + ' barcode(s). Looking up...';
   var req = scanReq(texts);
   invoke(req, function (r) {
@@ -220,6 +245,7 @@ function liveAsk(next) {
     no.addEventListener('click', function () { liveReset('Point at the label. Reading...'); next(); });
     l.popup.innerHTML = '';
     l.popup.appendChild(el('div', { className: 'card' }, [el('div', { className: 'big', text: r.rec.mpn }),
+      r.parsed && r.parsed.loose ? el('div', { className: 'small warn', text: 'Unverified: guessed from a bar on the label. Check it against the packet.' }) : null,
       el('div', { className: 'small', text: [r.rec.manufacturer, r.rec.supplier, r.rec.dkPn || r.rec.mouserPn].filter(Boolean).join(' · ') }),
       el('div', { text: r.rec.description }), r.parsed && r.parsed.qty ? el('div', { className: 'small', text: 'Quantity on label: ' + r.parsed.qty }) : null, use, no]));
   }, function (e) { if (!live) return; liveReset('Error: ' + (e && e.message || e)); next(); });
@@ -279,6 +305,7 @@ function addView() {
     });
     root.appendChild(el('div', { className: 'card' }, [
       el('div', { className: 'big', text: r.mpn }),
+      s.parsed && s.parsed.loose ? el('div', { className: 'small warn', text: 'Unverified: guessed from a bar on the label. Check it against the packet.' }) : null,
       el('div', { className: 'small', text: [r.manufacturer, r.supplier + (s.source === 'cache' ? ' (cached)' : ''), r.dkPn || r.mouserPn].filter(Boolean).join(' · ') }),
       el('div', { text: r.description }),
       el('div', { className: 'small', text: ['Group: ' + r.groupKey, r.spec].filter(Boolean).join(' · ') }),
@@ -290,6 +317,10 @@ function addView() {
       add
     ].concat((s.warnings || []).map(function (w) { return el('div', { className: 'small warn', text: w }); }))));
   }
+  var dbgBtn = el('button', { className: 'sec', text: ui.dbg ? 'Hide debug info' : 'Show debug info' });
+  dbgBtn.addEventListener('click', function () { ui.dbg = !ui.dbg; store('debug', ui.dbg); render(); });
+  root.appendChild(dbgBtn);
+  if (ui.dbg) root.appendChild(el('div', { className: 'small', text: dbgText() }));
   return root;
 }
 

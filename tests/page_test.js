@@ -177,5 +177,34 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await sleep(10);
   assert.deepStrictEqual(p.calls.at(-1).texts, ['467DPD'], 'the tapped bar is looked up as typed');
   assert.ok(p.byId.app.find(e => e.tag === 'input' && e.value === '6').length, 'quantity kept from the 2D code');
+  // Mouser live scan: asks for 4K with continuous focus, reads the 2D code then the long Code128 bar next to it, and only trusts a bar once two
+  // frames agree (a half-read bar in one frame must not start a lookup); the debug line shows what the decoder did.
+  const dm = '[)>\x1e06\x1dK37412632\x1d14K024\x1dPIC1\x1dQ6', pos = { topLeft: { x: 0, y: 0 }, topRight: { x: 100, y: 0 }, bottomRight: { x: 100, y: 100 }, bottomLeft: { x: 0, y: 100 } };
+  const barPos = { topLeft: { x: -300, y: 150 }, bottomRight: { x: -100, y: 170 } };
+  const mouserPage = (bars) => {
+    let frames = 0; const wanted = [];
+    const w = { readBarcodes: (img, o) => {
+      if (o.formats[0] === 'DataMatrix') { frames++; return Promise.resolve([{ text: dm, format: 'DataMatrix', isValid: true, position: pos }]); }
+      return Promise.resolve(bars(frames).map(t => ({ text: t, format: 'Code128', isValid: true, position: barPos })));
+    } };
+    const q = openPage({ load: { rows: [] }, scan: { parsed: { qty: 6 }, rec, source: 'Mouser', warnings: [] },
+      env: { ZXingWASM: w, navigator: { mediaDevices: { getUserMedia: c => { wanted.push(c.video); return Promise.resolve({ getTracks: () => [{ stop() {} }] }); } } } } });
+    q.byId.app.find(e => e.tag === 'button' && e.textContent === 'Mouser')[0].click();
+    q.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+    return { q, wanted, frames: () => frames };
+  };
+  let m = mouserPage(f => (f === 1 ? ['511-STM32H755ZIT6'] : []));   // the bar is read in one frame only
+  await sleep(700);
+  assert.strictEqual(m.wanted[0].width.ideal, 3840); assert.strictEqual(JSON.stringify(m.wanted[0].advanced), '[{"focusMode":"continuous"}]');
+  assert.ok(m.frames() >= 2 && !m.q.calls.some(c => c.action === 'scan'), 'a bar seen in a single frame starts no lookup');
+  assert.ok(/looking for the part number/.test(m.q.byId.live.textContent));
+  m.q.byId.live.find(e => e.textContent === 'Close camera')[0].click();
+  m = mouserPage(() => ['511-STM32H755ZIT6']);   // read in every frame
+  await sleep(700);
+  const sc = m.q.calls.find(c => c.action === 'scan');
+  assert.ok(sc && sc.supplier === 'Mouser' && sc.texts.includes('511-STM32H755ZIT6') && sc.texts.includes(dm), 'two agreeing frames start the lookup with the 2D code and the bar');
+  assert.ok(/Part detected/.test(m.q.byId.live.textContent));
+  m.q.ctx.ui.dbg = true; m.q.ctx.render();
+  assert.ok(/decoder ready/.test(m.q.text()) && /stage full/.test(m.q.text()) && /P\/N 511-STM32H755ZIT6/.test(m.q.text()), 'debug line says what the decoder did: ' + m.q.text());
   console.log('page ok');
 })().catch(e => { console.error(e); process.exit(1); });
