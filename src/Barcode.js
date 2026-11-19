@@ -43,12 +43,22 @@ function guessSupplier_(out, pn) {
   else if (/^\d{2,3}-\S+/.test(pn)) out.supplier = 'Mouser';
 }
 
+/** Which supplier printed the label, from the label itself (there is no scan-mode switch). Mouser's 2D code has the line item 14K (or a manufacturer
+ *  1V and nothing DigiKey-like); DigiKey's has its own part number 30P or a -ND number; with no 2D code a bar like 511-XXXX is Mouser, XXXX-ND DigiKey. */
+function detectSupplier_(out, hasTwo, bars) {
+  var f = out.fields || {};
+  if (hasTwo) return f['14K'] ? 'Mouser' : f['30P'] || /-ND$/i.test(f.P || '') ? 'DigiKey' : f['1V'] && !f['1P'] ? 'Mouser' : '';
+  var pn = bars.map(squash);
+  return pn.some(function (t) { return /^\d{2,4}-\S+$/.test(t); }) ? 'Mouser' : pn.some(function (t) { return /-ND$/i.test(t); }) ? 'DigiKey' : '';
+}
+
 /** Several barcodes from one photo or video frame -> one parsed label. The 2D code (starts with "[)>") gives the fields; the bare 1D texts fill in
  *  a missing part number: Mouser prints one 1D bar per field (PO, line, Mouser PN, MFG PN, qty, country, invoice) and its 2D code may lack the PN. */
 function mergeLabels_(texts, hint) {   // hint: 'DigiKey' or 'Mouser' from the page's scan mode
   texts = (texts || []).map(function (t) { return String(t == null ? '' : t); }).filter(squash);
   var two = texts.filter(function (t) { return t.indexOf('[)>') >= 0; }), one = texts.filter(function (t) { return t.indexOf('[)>') < 0; });
   var out = parseLabel_(two[0] || (one.length === 1 ? one[0] : ''));
+  hint = hint || detectSupplier_(out, two.length, one);
   if (hint === 'Mouser' || hint === 'DigiKey') out.supplier = hint === 'Mouser' && /-ND$/i.test(out.supplierPn) ? 'DigiKey' : hint;
   if (!two.length && one.length === 1) return out;   // a single plain barcode: already handled as a typed part number
   var skip = {};
@@ -78,9 +88,12 @@ function noPartWarning_(parsed) {
 function partKeys_(parsed) {
   var cands = [], seen = {}, keys = [];
   var add = function (s, pn) { pn = squash(pn); var k = s + '|' + normPn(pn); if (pn && !seen[k]) { seen[k] = 1; cands.push({ supplier: s, pn: pn }); } };
+  // Order = cheapest and most certain first; the lookup stops at the first hit, so a good label costs one API call. The supplier's own part
+  // number is exact; the manufacturer PN is tried on the same supplier, then on the other one (a real MPN; a bar only guessed to be one, or a
+  // leftover bar, is never sent to the other supplier).
   var first = parsed.supplier || 'DigiKey', other = first === 'DigiKey' ? 'Mouser' : 'DigiKey';
-  add(first, parsed.supplierPn); add(first, parsed.mpn); add(other, parsed.mpn);
-  (parsed.alts || []).forEach(function (p) { add(first, p); add(other, p); });   // leftover 1D bars, tried last
+  add(first, parsed.supplierPn); add(first, parsed.mpn); if (!parsed.loose) add(other, parsed.mpn);
+  (parsed.alts || []).forEach(function (p) { add(first, p); });
   cands.forEach(function (c) { var k = normPn(c.pn); if (keys.indexOf(k) < 0) keys.push(k); });
   return { cands: cands, keys: keys };
 }

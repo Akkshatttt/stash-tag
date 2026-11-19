@@ -2,7 +2,12 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
-## 0.7.1 (unreleased)
+## 0.8.0 (released)
+- **Changed (UI):** rebuilt after the iOS grouped-list style, light mode only. Large title, bottom tab bar, white rounded groups on a grey canvas with hairline separators, 44-50 pt rows, one filled primary button per screen. Search: one rounded search field with magnifier and clear button, scrolling category chips, sort menu, results as full rows (value, quantity at the right, category, spec, location, description, part numbers). Add: Live scan first, Take photo, type-a-part-number with Look up; the part card is a grouped list (sheet, quantity, location, lot) with Add to stock. The overlapping search controls of 0.7.1 are gone (checked in a rendered 500 px screenshot).
+- **Removed:** the DigiKey | Mouser switch. The label says who printed it (`detectSupplier_`: Mouser 2D has 14K, DigiKey 30P or -ND; a bare NNN-xxx bar is Mouser). One reader for every label: 2D code first; only a 2D code with no part number goes on to read the 1D bars; live looks for the 2D code in a 1280 px copy and builds the 4K frame only when bars must be read.
+- **Changed (API calls):** lookups are one at a time, best first, first hit stops: the supplier part number, then the MPN on the same supplier, then the MPN on the other supplier (never a guessed or leftover bar), leftover bars on the label supplier only. A clean "not found" is remembered in D1 for 6 hours so rescanning the same packet costs no request. Tests count the calls.
+
+## 0.7.1 (folded into 0.8.0)
 - **Changed (UI only, no new code paths):** phone-first look after Apple HIG basics. System colours that follow light/dark automatically, 17px body text, 44-50px touch targets, tab bar fixed at the bottom (thumb reach, clear of the home indicator) with two icons, DigiKey | Mouser as a segmented control, one filled blue primary button per card with tinted secondary buttons, grouped rounded cards, safe-area padding, press feedback. CSS and one markup line; page size and load path unchanged.
 
 ## 0.7.0 (released)

@@ -61,12 +61,19 @@ t('several barcodes from one photo merge into one label (Mouser prints one 1D ba
 t('Mouser mode: customer P/N in the 2D code, vertical label code and field bars are never the part number', () => {
   const two = '[)>␞06␝K37412632␝14K024␝PIC1␝Q6␝11K087334555␝4LPH␝1VSTMicro␞␄';   // real label: P = customer P/N, no 1P
   let p = S.mergeLabels_([two, '37412632', '024', 'IC1', '6', 'PH', '467DPD']);
-  assert.strictEqual(p.mpn, '467DPD', 'without the hint the vertical code is mistaken for the MPN (the old bug)');
+  assert.strictEqual(p.mpn, '', 'the label is recognised as Mouser by itself, so the vertical code is never the MPN'); assert.strictEqual(p.supplier, 'Mouser');
   p = S.mergeLabels_([two, '37412632', '024', 'IC1', '6', 'PH', '467DPD'], 'Mouser');
   assert.deepStrictEqual([p.mpn, p.supplierPn, p.supplier, p.qty], ['', '', 'Mouser', 6], 'no part number: the page shows the pick list');
   p = S.mergeLabels_([two, '467DPD', '511-STM32H755ZIT6', 'IC1'], 'Mouser');
   assert.deepStrictEqual([p.mpn, p.supplierPn, p.supplier], ['', '511-STM32H755ZIT6', 'Mouser']);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(S.partKeys_(p).cands[0])), { supplier: 'Mouser', pn: '511-STM32H755ZIT6' }, 'Mouser is asked first');
+  const sup = (texts) => S.mergeLabels_(texts).supplier;   // no scan-mode switch: the label says who printed it
+  assert.strictEqual(sup(['[)>\x1e06\x1dK1\x1d14K001\x1dPC1\x1dQ6\x1d1VYageo']), 'Mouser');
+  assert.strictEqual(sup(['[)>\x1e06\x1dP311-2.20KLRCT-ND\x1d1PAC0402FR-072K2L\x1d30P311-2.20KLRCT-ND\x1dQ5']), 'DigiKey');
+  assert.strictEqual(sup(['511-STM32H755ZIT6']), 'Mouser'); assert.strictEqual(sup(['YAG3467CT-ND']), 'DigiKey');
+  const pk = [...S.partKeys_({ supplier: 'Mouser', supplierPn: '511-X1', mpn: 'X1', alts: ['junk123'] }).cands.map(c => c.supplier + ':' + c.pn)];
+  assert.deepStrictEqual(pk, ['Mouser:511-X1', 'Mouser:X1', 'DigiKey:X1', 'Mouser:junk123'], 'best first; a leftover bar never goes to the other supplier');
+  assert.ok(!S.partKeys_({ supplier: 'Mouser', mpn: 'GUESS1', loose: true }).cands.some(c => c.supplier === 'DigiKey'), 'a guessed MPN is not sent to the other supplier');
   p = S.mergeLabels_(['[)>␞06␝KEPS␠PD␠V2␝14K008␝1PBSC030P03NS3GAUMA1␝Q44␝11K086097937␝4LAT␝1VInfineon␞␄'], 'Mouser');
   assert.deepStrictEqual([p.mpn, p.qty, p.supplier], ['BSC030P03NS3GAUMA1', 44, 'Mouser'], '2D with 1P is enough');
   assert.strictEqual(S.mergeLabels_(['[)>␞06␝P1-ND␝1PX␝30P1-ND'], 'Mouser').supplier, 'DigiKey', 'a DigiKey label in Mouser mode stays DigiKey');

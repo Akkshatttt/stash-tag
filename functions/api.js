@@ -38,7 +38,8 @@ export async function onRequestPost({ request, env, waitUntil }) {
   if (!parsed.mpn && !parsed.supplierPn) return reply({ ok: true, data: { parsed, rec: null, warnings: [noPartWarning_(parsed)] } });
   const keys = partKeys_(parsed).keys.slice(0, 20);
   const hit = await cached(env, keys);
-  if (hit) return reply({ ok: true, data: { parsed, rec: hit, source: 'cloud cache', warnings: [] } });
+  if (hit && hit.rec) return reply({ ok: true, data: { parsed, rec: hit.rec, source: 'cloud cache', warnings: [] } });
+  if (hit) return reply({ ok: true, data: { parsed, rec: null, source: 'cloud cache', warnings: ['Looked up a moment ago and not found at DigiKey or Mouser, so no new request was made. Check the part number, or try again later.'] } });
 
   if (!haveKeys(env)) {   // no supplier secrets here: Apps Script looks it up
     const out = await forward(env, body);
@@ -47,6 +48,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   }
   const found = await lookupPart(env, parsed);
   if (found.rec) store(env, waitUntil, found.rec, keys);
+  else if (found.clean) miss(env, waitUntil, keys);   // remember a clean "not found" so rescanning the same packet costs no API call
   return reply({ ok: true, data: { parsed, rec: found.rec, source: found.source, warnings: found.warnings } });
 }
 
@@ -54,11 +56,18 @@ export async function onRequestPost({ request, env, waitUntil }) {
 const TABLE = 'CREATE TABLE IF NOT EXISTS parts (key TEXT PRIMARY KEY, rec TEXT NOT NULL, time TEXT)';
 async function cached(env, keys) {
   if (!keys.length) return null;
-  const q = () => env.DB.prepare(`SELECT key, rec FROM parts WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all();
+  const q = () => env.DB.prepare(`SELECT key, rec, time FROM parts WHERE key IN (${keys.map(() => '?').join(',')})`).bind(...keys).all();
   let res;
   try { res = await q(); } catch (e) { await env.DB.prepare(TABLE).run(); res = await q(); }
-  const byKey = Object.fromEntries((res.results || []).map(r => [r.key, r.rec])), k = keys.find(x => byKey[x]);
-  return k ? JSON.parse(byKey[k]) : null;
+  const byKey = Object.fromEntries((res.results || []).map(r => [r.key, r])), k = keys.find(x => byKey[x] && byKey[x].rec !== MISS);
+  if (k) return { rec: JSON.parse(byKey[k].rec) };
+  const fresh = r => r && r.rec === MISS && Date.now() - Date.parse(r.time) < MISS_MS;
+  return keys.every(x => fresh(byKey[x])) ? { rec: null } : null;   // every key a recent miss: do not ask the suppliers again
+}
+const MISS = 'null', MISS_MS = 6 * 3600 * 1000;
+function miss(env, waitUntil, keys) {
+  const time = new Date().toISOString(), stmt = env.DB.prepare('INSERT OR REPLACE INTO parts (key, rec, time) VALUES (?, ?, ?)');
+  waitUntil(env.DB.batch(keys.map(k => stmt.bind(k, MISS, time))));
 }
 function store(env, waitUntil, rec, keys) {
   const all = [...new Set([rec.mpn, rec.dkPn, rec.mouserPn].map(normPn).concat(keys).filter(Boolean))];

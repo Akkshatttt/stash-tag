@@ -54,12 +54,12 @@ const row = { category: 'Resistors', value: '2.2k', package: '0402', spec: '1%',
 
 // add flow: look up -> card -> confirm
 let p = openPage({ load: { rows: [{ category: 'Resistors', groupKey: 'R|2.2k|0402', qty: 75, location: 'A1', value: '2.2k', package: '0402', mpns: 'X', description: 'd' }] }, scan: { parsed: { qty: 50, lot: 'L9' }, rec, source: 'DigiKey', warnings: [], existing: { qty: 75, location: 'A1' } }, confirm: { row, isNew: false } });
-assert.ok(/Scan label/.test(p.text()) || p.byId.app.find(e => /Scan label/.test(e.textContent)).length);
+assert.ok(/Live scan/.test(p.text()) || p.byId.app.find(e => /Live scan/.test(e.textContent)).length);
 const inputs = () => p.byId.app.find(e => e.tag === 'input' && !e.attrs.capture && e.type !== 'file');
 inputs()[0].value = 'AC0402FR-072K2L'; inputs()[0].fire('input');
-p.byId.app.find(e => e.textContent === 'Look up')[0].click();
+p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Look up')[0].click();
 assert.deepStrictEqual(p.calls[0], { action: 'load' });
-assert.deepStrictEqual(p.calls[1], { action: 'scan', texts: ['AC0402FR-072K2L'], supplier: 'DigiKey', keys: ['ac0402fr072k2l'] });
+assert.deepStrictEqual(p.calls[1], { action: 'scan', texts: ['AC0402FR-072K2L'], keys: ['ac0402fr072k2l'] });
 assert.ok(/AC0402FR-072K2L/.test(p.text()) && /Already in stock: 75 at A1/.test(p.text()));
 const qty = inputs().filter(e => e.value === '50')[0];
 assert.ok(qty, 'quantity prefilled from the label');
@@ -71,7 +71,7 @@ assert.ok(/Updated: 2.2k 0402/.test(p.text()) && /now 125/.test(p.text()));
 // not found
 p = openPage({ load: { rows: [] }, scan: { parsed: { raw: '[)>\x1e06\x1d1PABC', fields: { '1P': 'ABC' }, mpn: 'ABC' }, rec: null, warnings: ['Mouser key missing'] } });
 p.byId.app.find(e => e.tagName === undefined && e.textContent === 'Look up')[0];
-inputs()[0].value = 'ZZZ'; inputs()[0].fire('input'); p.byId.app.find(e => e.textContent === 'Look up')[0].click();
+inputs()[0].value = 'ZZZ'; inputs()[0].fire('input'); p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Look up')[0].click();
 assert.ok(/Part not found/.test(p.text()) && /Mouser key missing/.test(p.text()));
 assert.ok(/Decoded: \[\)><RS>06<GS>1PABC/.test(p.text()) && /searched: ABC/.test(p.text()));
 
@@ -98,14 +98,14 @@ assert.strictEqual(order(), 'BAC'); assert.ok(/3 result/.test(p.text()));
 sel()[0].value = 'value'; sel()[0].fire('change'); assert.strictEqual(order(), 'ABC');
 p.byId.app.find(e => e.textContent === 'Ascending')[0].click(); assert.strictEqual(order(), 'CBA');
 sel()[0].value = 'qty'; sel()[0].fire('change'); assert.strictEqual(order(), 'ACB');
-sel()[1].value = 'Resistors'; sel()[1].fire('change'); assert.ok(/1 result/.test(p.text()) && !/DA/.test(p.text()));
+p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Resistors')[0].click(); assert.ok(/1 result/.test(p.text()) && !/DA/.test(p.text()));
 assert.deepStrictEqual(p.calls, [{ action: 'load' }], 'sorting makes no server call');
 
 // two separate scan buttons; live scan: blocked camera, then detect -> popup -> confirm -> normal part card
 p = openPage({ load: { rows: [] } });
-assert.ok(p.byId.app.find(e => e.textContent === 'Scan label (take photo)').length && p.byId.app.find(e => e.textContent === 'Live scan (camera)').length, 'photo and live buttons are separate');
+assert.ok(p.byId.app.find(e => e.textContent === 'Take photo').length && p.byId.app.find(e => e.textContent === 'Live scan').length, 'photo and live buttons are separate');
 p = openPage({ load: { rows: [] }, env: { navigator: { mediaDevices: { getUserMedia: () => Promise.reject({ name: 'NotAllowedError', message: 'denied' }) } } } });
-p.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+p.byId.app.find(e => e.textContent === 'Live scan')[0].click();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   await sleep(10);
@@ -119,7 +119,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.deepStrictEqual(p.fetched[0], { url: '/api', token: 'abc' });
   p.byId.t1.click();
   inputs()[0].value = '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ40'; inputs()[0].fire('input');
-  p.byId.app.find(e => e.textContent === 'Look up')[0].click();
+  p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Look up')[0].click();
   await sleep(10);
   assert.ok(/Add to stock/.test(p.text()) && inputs().some(e => e.value === '40'), 'qty comes from the local parse on a cloud hit');
   p = openPage({ static: { ls: { token: '"abc"' } }, load: { rows: [] } });
@@ -128,12 +128,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // no token, no password: sign-in card, no server call; password goes with every call; a forbidden answer signs out
   const ls2 = {};
   p = openPage({ static: { ls: ls2 }, load: { rows: [row] } });
-  assert.ok(/Sign in/.test(p.text()) && !p.calls.length && !/Add to stock|Scan label/.test(p.text()));
+  assert.ok(/Sign in/.test(p.text()) && !p.calls.length && !/Add to stock|Live scan/.test(p.text()));
   const pw = p.byId.app.find(e => e.type === 'password')[0];
   pw.value = 'secret'; p.byId.app.find(e => e.textContent === 'Sign in' && e.tag === 'button')[0].click();
   await sleep(10);
   assert.deepStrictEqual(p.fetched[0], { url: '/api', token: '', password: 'secret' }); assert.strictEqual(JSON.parse(ls2.pass), 'secret');
-  assert.ok(/Scan label/.test(p.text()), 'app shows after sign-in');
+  assert.ok(/Live scan/.test(p.text()), 'app shows after sign-in');
   p = openPage({ static: { ls: { pass: '"old"', inv: JSON.stringify([row]) } }, load: new Error('forbidden') });
   await sleep(10);
   assert.ok(/wrong password/.test(p.text()) && /Sign in/.test(p.text()));
@@ -146,7 +146,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const wasm = { readBarcodes: (img, o) => { asked.push(JSON.parse(JSON.stringify(o.formats))); return Promise.resolve([{ text: '[)>\x1e06\x1d1PAC0402FR-072K2L\x1dQ50', format: 'DataMatrix', isValid: true }]); } };
   p = openPage({ load: { rows: [] }, scan: { parsed: { qty: 50, lot: '' }, rec, source: 'DigiKey', warnings: [] }, confirm: { row, isNew: false },
     env: { ZXingWASM: wasm, navigator: { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop: () => stopped++ }] }) } } } });
-  p.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+  p.byId.app.find(e => e.textContent === 'Live scan')[0].click();
   await sleep(1500);
   const live = p.byId.live;
   assert.ok(/Part detected/.test(live.textContent) && /AC0402FR-072K2L/.test(live.textContent) && /Quantity on label: 50/.test(live.textContent), 'popup shows the detected part');
@@ -160,14 +160,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ls3 = { pass: '"pw"' };
   p = openPage({ static: { ls: ls3 }, load: { rows: [] }, scan: { parsed: { qty: 6 }, rec, source: 'Mouser', warnings: [] } });
   await sleep(10);
-  p.byId.app.find(e => e.tag === 'button' && e.textContent === 'Mouser')[0].click();
-  assert.strictEqual(JSON.parse(ls3.supplier), 'Mouser');
+  assert.ok(!('supplier' in p.calls[0]), 'no scan mode any more');
   const two = '[)>␞06␝K37412632␝14K024␝PIC1␝Q6␝4LPH␝1VSTMicro';
   const before = p.calls.length;
   p.ctx.doScan([two, '37412632', 'IC1', '6', 'PH', '467DPD', '511-STM32H755ZIT6']);
   await sleep(10);
   assert.strictEqual(p.calls.length, before + 1, 'a Mouser PN on the label goes to the server');
-  assert.strictEqual(p.calls.at(-1).supplier, 'Mouser');
+  assert.strictEqual(p.calls.at(-1).supplier, undefined, 'the page sends no supplier: the label says which it is');
   p.ctx.doScan([two, '37412632', 'IC1', '6', 'PH', '467DPD']);
   await sleep(10);
   assert.strictEqual(p.calls.length, before + 1, 'no part number: no server call');
@@ -189,8 +188,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     } };
     const q = openPage({ load: { rows: [] }, scan: { parsed: { qty: 6 }, rec, source: 'Mouser', warnings: [] },
       env: { ZXingWASM: w, navigator: { mediaDevices: { getUserMedia: c => { wanted.push(c.video); return Promise.resolve({ getTracks: () => [{ stop() {} }] }); } } } } });
-    q.byId.app.find(e => e.tag === 'button' && e.textContent === 'Mouser')[0].click();
-    q.byId.app.find(e => e.textContent === 'Live scan (camera)')[0].click();
+    q.byId.app.find(e => e.textContent === 'Live scan')[0].click();
     return { q, wanted, frames: () => frames };
   };
   let m = mouserPage(f => (f === 1 ? ['511-STM32H755ZIT6'] : []));   // the bar is read in one frame only
@@ -198,11 +196,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.strictEqual(m.wanted[0].width.ideal, 3840); assert.strictEqual(JSON.stringify(m.wanted[0].advanced), '[{"focusMode":"continuous"}]');
   assert.ok(m.frames() >= 2 && !m.q.calls.some(c => c.action === 'scan'), 'a bar seen in a single frame starts no lookup');
   assert.ok(/looking for the part number/.test(m.q.byId.live.textContent));
-  m.q.byId.live.find(e => e.textContent === 'Close camera')[0].click();
+  m.q.byId.live.find(e => e.tag === 'button' && e.textContent === 'Close')[0].click();
   m = mouserPage(() => ['511-STM32H755ZIT6']);   // read in every frame
   await sleep(700);
   const sc = m.q.calls.find(c => c.action === 'scan');
-  assert.ok(sc && sc.supplier === 'Mouser' && sc.texts.includes('511-STM32H755ZIT6') && sc.texts.includes(dm), 'two agreeing frames start the lookup with the 2D code and the bar');
+  assert.ok(sc && sc.texts.includes('511-STM32H755ZIT6') && sc.texts.includes(dm), 'two agreeing frames start the lookup with the 2D code and the bar');
   assert.ok(/Part detected/.test(m.q.byId.live.textContent));
   m.q.ctx.ui.dbg = true; m.q.ctx.render();
   assert.ok(/decoder ready/.test(m.q.text()) && /stage full/.test(m.q.text()) && /P\/N 511-STM32H755ZIT6/.test(m.q.text()), 'debug line says what the decoder did: ' + m.q.text());

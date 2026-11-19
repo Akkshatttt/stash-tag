@@ -136,18 +136,21 @@ var MOUSER_PN = /^\d{2,4}-\S+$/;   // Mouser's own part number as printed in the
  *  is the long Code128 bar: read every Code128 over the whole frame at its native size and take the one nearest the 2D code (the flow of invscan's
  *  app.js), and only if none matches Mouser's NNN-... pattern read the 2D-anchored deskewed strips. Without a 2D code: plain 1D read.
  *  Promise of [{text, format}]; the array carries .dbg (what happened) for the page's debug line. */
-function mouserRead_(wasm, img, fast) {
+function mouserRead_(wasm, img, fast, getFull) {   // getFull() optional: the frame at full size, fetched only when the 1D bars have to be read (img is then a small copy)
   var t0 = Date.now(), dbg = { w: img.width, h: img.height };
   var done = function (list) { dbg.ms = Date.now() - t0; list.dbg = dbg; return list; };
   return decodeWasm_(wasm, img, fast, ['DataMatrix'], true).then(function (dm) {
     var two = dm.filter(function (r) { return r.text.indexOf('[)>') >= 0; })[0];
     dbg.dm = !!(two && two.position);
     if (!two || !two.position) return decodeWasm_(wasm, img, fast, ['Code128', 'DataMatrix'], true).then(function (rs) { dbg.stage = 'plain'; dbg.c128 = rs.length; return done(rs); });
-    if (/[\x1d␝]1P[^\x1d␝\x1e␞]/.test(two.text)) { dbg.stage = '2d'; return done([two]); }   // 2D already names the part
-    var P = two.position, tl = P.topLeft, a = Math.atan2(P.topRight.y - tl.y, P.topRight.x - tl.x), s = Math.sqrt(Math.pow(P.topRight.x - tl.x, 2) + Math.pow(P.topRight.y - tl.y, 2));
-    var mid = function (p) { return { x: (p.topLeft.x + p.bottomRight.x) / 2, y: (p.topLeft.y + p.bottomRight.y) / 2 }; }, c0 = mid(P);
-    dbg.ang = Math.round(a * 180 / Math.PI); dbg.size = Math.round(s);
-    return decodeWasm_(wasm, img, fast, ['Code128'], true).then(function (bars) {
+    var named = parseLabel_(two.text);
+    if (named.mpn || named.supplierPn) { dbg.stage = '2d'; return done([two]); }   // the 2D code already names the part (DigiKey always, Mouser sometimes): no bars to read
+    var full = getFull ? getFull() : img, sc = full.width / img.width;   // positions come from img; the bars are read on full
+    var P = two.position, tl = { x: P.topLeft.x * sc, y: P.topLeft.y * sc }, tr = { x: P.topRight.x * sc, y: P.topRight.y * sc };
+    var a = Math.atan2(tr.y - tl.y, tr.x - tl.x), s = Math.sqrt(Math.pow(tr.x - tl.x, 2) + Math.pow(tr.y - tl.y, 2));
+    var mid = function (p) { return { x: (p.topLeft.x + p.bottomRight.x) / 2, y: (p.topLeft.y + p.bottomRight.y) / 2 }; }, c0 = { x: mid(P).x * sc, y: mid(P).y * sc };
+    dbg.ang = Math.round(a * 180 / Math.PI); dbg.size = Math.round(s); dbg.w = full.width; dbg.h = full.height;
+    return decodeWasm_(wasm, full, fast, ['Code128'], true).then(function (bars) {
       dbg.c128 = bars.length;
       var near = bars.map(function (r) { var m = r.position ? mid(r.position) : c0; return { r: r, d: Math.hypot(m.x - c0.x, m.y - c0.y) }; })
         .filter(function (x) { return x.d <= 9 * s; }).sort(function (x, y) { return x.d - y.d; }).map(function (x) { return x.r; });
@@ -161,7 +164,7 @@ function mouserRead_(wasm, img, fast) {
       function next(i) {
         if (i >= rows.length) return done(found);
         dbg.strips = i + 1;
-        return wasm.readBarcodes(labelStrip_(img, tl, a, s, rows[i], k), { formats: ['Code128'], tryHarder: true, tryRotate: false, maxNumberOfSymbols: 2 }).then(function (rs) {
+        return wasm.readBarcodes(labelStrip_(full, tl, a, s, rows[i], k), { formats: ['Code128'], tryHarder: true, tryRotate: false, maxNumberOfSymbols: 2 }).then(function (rs) {
           var hit = false;
           rs.forEach(function (r) { if (r.text && r.isValid !== false && !seen[r.text]) { seen[r.text] = 1; found.push({ text: r.text, format: r.format }); if (MOUSER_PN.test(r.text)) { hit = true; dbg.pn = r.text; } } });
           return hit ? done(found) : next(i + 1);

@@ -13,7 +13,7 @@ const DB = {
   prepare(sql) {
     const st = { sql, args: [], bind(...a) { return Object.assign({}, st, { args: a }); },
       async run() { if (/^CREATE/.test(sql)) tableMade = true; if (/^INSERT/.test(sql)) rows[this.args[0]] = { rec: this.args[1], time: this.args[2] }; return {}; },
-      async all() { if (!tableMade && dbFailsOnce) { dbFailsOnce = false; throw new Error('no such table: parts'); } return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec })) }; } };
+      async all() { if (!tableMade && dbFailsOnce) { dbFailsOnce = false; throw new Error('no such table: parts'); } return { results: this.args.filter(k => rows[k]).map(k => ({ key: k, rec: rows[k].rec, time: rows[k].time })) }; } };
     return st;
   },
   async batch(list) { for (const s of list) await s.run(); }
@@ -94,6 +94,21 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
   assert.strictEqual(r.body.data.source, 'Mouser'); assert.strictEqual(r.body.data.rec.mouserPn, '603-AC0402FR-072K2L');
   assert.ok(supplier.some(c => c.url.includes('mouser.com')));
 
+  // API economy: a Mouser label whose bar gives the Mouser PN costs exactly one Mouser call and none to DigiKey; a supplier hint is not needed
+  Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0; dkProduct = () => ({ code: 404 });
+  const mdm = '[)>\x1e06\x1dK1\x1d14K001\x1dPCUST\x1dQ6\x1d1VYageo';
+  r = await scan([mdm, '603-AC0402FR-072K2L']);
+  assert.strictEqual(r.body.data.source, 'Mouser'); assert.strictEqual(supplier.filter(c => c.url.includes('mouser.com')).length, 1);
+  assert.strictEqual(supplier.filter(c => c.url.includes('digikey.com')).length, 0, 'no DigiKey call for a Mouser label that was found');
+  // a clean miss is remembered: the same packet again costs nothing, a different part number still asks
+  Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0; mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: [] } } });
+  r = await scan(['ZZ-NOPE-1']);
+  assert.strictEqual(r.body.data.rec, null); const asked = supplier.length; assert.ok(asked > 0);
+  r = await scan(['ZZ-NOPE-1']);
+  assert.strictEqual(supplier.length, asked, 'rescan of a part just reported missing makes no API call'); assert.ok(/not found/.test(r.body.data.warnings[0]));
+  r = await scan(['ZZ-OTHER-2']);
+  assert.ok(supplier.length > asked, 'a different number is looked up');
+  mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: fx('mouser_AC0402FR-072K2L.json') } } });
   // errors become warnings and never carry a key; a 429 is retried once
   Object.keys(rows).forEach(k => delete rows[k]); supplier.length = 0;
   let n429 = 0;
