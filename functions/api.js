@@ -7,7 +7,7 @@
 // ponytail: records never refresh here; a stock-check feature can overwrite rows when it lands.
 import { mergeLabels_, partKeys_, normPn, noPartWarning_, fingerprint_ } from '../lib/shared.js';
 import { haveKeys, lookupPart } from '../lib/lookup.js';
-import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp } from '../lib/inv.js';
+import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp, suggestCat, describe } from '../lib/inv.js';
 
 const reply = (body, status) => new Response(JSON.stringify(body), { status: status || 200, headers: { 'content-type': 'application/json' } });
 
@@ -42,7 +42,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   await ensureSchema(env);
   const fp = fingerprint_(parsed), dup = await findByFp(env, fp);
   if (dup) return reply({ ok: true, data: { parsed, fp, dup, rec: null, source: 'inventory', warnings: [] } });
-  const done = async data => reply({ ok: true, data: Object.assign({ parsed, fp: fp || null, comp: data.rec ? await findComp(env, data.rec) : null }, data) });
+  const done = async data => reply({ ok: true, data: Object.assign({ parsed, fp: fp || null, comp: data.rec ? await findComp(env, data.rec) : null, cat: data.rec ? await suggestCat(env, data.rec) : null, descr: data.rec ? describe(data.rec) : null }, data) });
   if (!parsed.mpn && !parsed.supplierPn) return done({ rec: null, warnings: [noPartWarning_(parsed)] });
   const keys = partKeys_(parsed).keys.slice(0, 20);
   const hit = await cached(env, keys);
