@@ -86,12 +86,20 @@
   .modal { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); align-items: flex-end; }
   .sheet { background: #fff; width: 100%; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .tabbar button:disabled { opacity: .4; }
+  .scanbox { background: linear-gradient(180deg, #fff 0%, #f4f8ff 100%); border-radius: 18px; padding: 14px 14px 4px; margin: 0 0 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .scan-h { font-size: 15px; font-weight: 700; margin: 0 0 12px; text-align: center; }
+  .tiles2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 112px; border: 0; border-radius: 16px; font: 700 15px/1.2 -apple-system, system-ui, sans-serif; margin: 0; padding: 10px; }
+  .tile-btn .ic svg { width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; display: block; }
+  .tile-btn.t-live { background: var(--blue); color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+  .tile-btn.t-photo { background: var(--tint); color: var(--blue); }
+  .or { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 8px; text-transform: uppercase; letter-spacing: .7px; }
+  .row2 button.primary { width: auto; margin: 0; min-height: 46px; padding: 0 20px; font-size: 16px; }
   .title { font-size: 28px; margin: 4px 0 10px; }
   .seg { display: flex; background: var(--fill); border-radius: 11px; padding: 3px; margin: 0 0 12px; }
   .seg button { flex: 1; min-height: 42px; border: 0; border-radius: 9px; background: transparent; font: 600 15px -apple-system, system-ui, sans-serif; color: var(--muted); margin: 0; }
   .seg button.on { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,.22); }
   .mode-upd { --blue: #c75f00; --tint: rgba(199,95,0,.13); }
-  .mode-upd .title { color: #c75f00; }
   .item { padding: 9px 12px; }
   .item.open { background: #f3f8ff; box-shadow: inset 3px 0 0 var(--blue); }
   .item .res { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
@@ -590,10 +598,16 @@ function scanControls(from, hasResult) {
       if (t.length) doScan(t, null, from); else { flash('No barcode found. Try again, or type the part number below.' + (st.wasmError ? ' (decoder: ' + st.wasmError + ')' : ''), 'bad'); render(); }
     });
   });
-  var photo = B('Take photo', 'sec', function () { cam.value = ''; cam.click(); });
-  var typed = input('text', { placeholder: 'Type or paste a part number' }), go = B('Look up', 'link', function () { if (ui.text) doScan(ui.text, null, from); });
-  out.push(cam, B(hasResult ? 'Scan another' : 'Live scan', hasResult ? 'sec' : 'primary', startLive), photo, el('div', { className: 'row2' }, [typed, go]));
-  out.push(el('div', { className: 'foot', text: 'DigiKey and Mouser labels are recognised automatically.' }));
+  var tile = function (cls, label, path, fn) {   // a big button with an icon above its label
+    var b = B('', 'tile-btn ' + cls, fn), ic = el('span', { className: 'ic' });
+    ic.innerHTML = '<svg viewBox="0 0 24 24">' + path + '</svg>';
+    b.appendChild(ic); b.appendChild(el('span', { text: label })); return b;
+  };
+  var live = tile('t-live', hasResult ? 'Scan another' : 'Live scan', '<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/>', startLive);
+  var photo = tile('t-photo', 'Take photo', '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>', function () { cam.value = ''; cam.click(); });
+  var typed = input('text', { placeholder: 'Type or paste a part number' }), go = B('Look up', 'primary', function () { if (ui.text) doScan(ui.text, null, from); });
+  out.push(cam, el('div', { className: 'scanbox' }, [el('div', { className: 'scan-h', text: from === 'tx' ? 'Scan a packet that is in stock' : 'Scan a label to add stock' }), el('div', { className: 'tiles2' }, [live, photo]),
+    el('div', { className: 'or', text: 'or type a part number' }), el('div', { className: 'row2' }, [typed, go]), el('div', { className: 'foot', text: 'DigiKey and Mouser labels are recognised automatically.' })]));
   return out;
 }
 function pickView(from) {
@@ -763,7 +777,11 @@ function searchView() {
   root.appendChild(dyn);
   return root;
 }
-function toggle(k) { st.open[k] = !st.open[k]; st.redraw(); }
+function toggle(k) {   // one open group at a time: opening a group closes the previous one (and whatever was open inside it)
+  var was = st.open[k];
+  if (k.charAt(0) === 'g') st.open = {};
+  st.open[k] = !was; st.redraw();
+}
 function hl(text, q) {   // text with the search words marked
   var words = squash(q || '').split(' ').filter(function (w) { return w.length > 1; });
   if (!words.length || !text) return el('span', { text: text || '' });

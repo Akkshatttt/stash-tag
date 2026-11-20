@@ -7,7 +7,7 @@
 // ponytail: records never refresh here; a stock-check feature can overwrite rows when it lands.
 import { mergeLabels_, partKeys_, normPn, noPartWarning_, fingerprint_, classify_ } from '../lib/shared.js';
 import { haveKeys, lookupPart } from '../lib/lookup.js';
-import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp, suggestCat, describe } from '../lib/inv.js';
+import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp, suggestCat, describe, exportAll } from '../lib/inv.js';
 
 const reply = (body, status) => new Response(JSON.stringify(body), { status: status || 200, headers: { 'content-type': 'application/json' } });
 
@@ -29,12 +29,18 @@ export async function onRequestPost({ request, env, waitUntil }) {
   try { body = await request.json(); } catch (e) { return reply({ ok: false, error: 'bad request' }, 400); }
   // With the secret PASSWORD set, only the shared admin password unlocks the API (a saved #t= token no longer does); without it, the token.
   // The token is what goes on to Apps Script. ponytail: one shared password, no rate limit on wrong guesses; per-user logins come later.
-  const allowed = env.TOKEN && (env.PASSWORD ? body.password && await same(body.password, env.PASSWORD) : body.token && await same(body.token, env.TOKEN));
+  // The Sheet mirror (Apps Script) holds the token, never the password: with the token it may read the export and nothing else.
+  const tokenOk = !!(env.TOKEN && body.token && await same(body.token, env.TOKEN));
+  const allowed = env.TOKEN && ((env.PASSWORD ? body.password && await same(body.password, env.PASSWORD) : tokenOk) || (tokenOk && (body.req || {}).action === 'inv_export'));
   if (!allowed) return reply({ ok: false, error: 'forbidden' }, 403);
   const req = body.req || {};
   body = { token: env.TOKEN, req };
   if (req.action === 'usage') return reply({ ok: true, data: await usage(env) });
-  if (String(req.action).startsWith('inv_')) return reply(await inventory(env, req));
+  if (String(req.action).startsWith('inv_')) {
+    const out = await inventory(env, req);
+    if (out.ok && MUTATING.includes(req.action)) syncHint(env, waitUntil, request);
+    return reply(out);
+  }
   if (req.action !== 'scan') return reply(await forward(env, body));
 
   // A scan: first the packet itself (a label already in stock is recognised without any lookup), then the part (D1 cache, then the suppliers).
@@ -61,6 +67,15 @@ export async function onRequestPost({ request, env, waitUntil }) {
   return done({ rec: found.rec, source: found.source, warnings: found.warnings });
 }
 
+// A change tells Apps Script (the Sheet mirror) that the inventory moved; Apps Script writes the Sheet once things have been quiet for 15 minutes. Fire and forget:
+// the answer to the person never waits for it and a failure here changes nothing.
+const MUTATING = ['inv_add', 'inv_txn', 'inv_edit', 'inv_audit'];
+function syncHint(env, waitUntil, request) {
+  if (!env.EXEC_URL || !env.TOKEN) return;
+  let origin; try { origin = new URL(request.url).origin; } catch (e) { return; }
+  waitUntil(fetch(env.EXEC_URL, { method: 'POST', body: JSON.stringify({ token: env.TOKEN, req: { action: 'sync_hint', origin } }), redirect: 'follow' }).catch(() => {}));
+}
+
 // Inventory actions (D1 is the source of truth). Errors meant for the person are thrown as Refuse and answered as {ok:false, error}.
 async function inventory(env, req) {
   try {
@@ -75,6 +90,7 @@ async function inventory(env, req) {
       case 'inv_box': return { ok: true, data: await addBox(env, req.name) };
       case 'inv_cat': return { ok: true, data: await addCategory(env, req) };
       case 'inv_hist': return { ok: true, data: await history(env, req.comp) };
+      case 'inv_export': return { ok: true, data: await exportAll(env) };
       default: return { ok: false, error: 'unknown action' };
     }
   } catch (e) {

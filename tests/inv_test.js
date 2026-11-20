@@ -9,7 +9,9 @@ const { makeD1 } = require('./d1');
 const fx = n => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', n), 'utf8'));
 const res = (code, body) => ({ status: code, text: async () => JSON.stringify(body) });
 const supplier = [];
-global.fetch = async url => {
+const hints = [];
+global.fetch = async (url, o) => {
+  if (url === 'https://exec') { hints.push(JSON.parse(o.body)); return res(200, { ok: true }); }
   supplier.push(url);
   if (url.includes('oauth2')) return res(200, { access_token: 't', expires_in: 600 });
   if (url.includes('digikey.com')) return res(200, fx('dk_AC0402FR-072K2L.json'));
@@ -22,7 +24,7 @@ global.fetch = async url => {
   const inv = await import(base + '/lib/inv.js');
   const env = { DB: makeD1(), TOKEN: 'tok', DIGIKEY_CLIENT_ID: 'a', DIGIKEY_CLIENT_SECRET: 'b', MOUSER_KEY: 'c' };
   const waits = [];
-  const call = async (req, extra) => { const r = await onRequestPost({ request: { json: async () => Object.assign({ token: 'tok', req }, extra) }, env, waitUntil: p => waits.push(p) }); await Promise.all(waits); return r.json(); };
+  const call = async (req, extra) => { const r = await onRequestPost({ request: { url: 'https://stash.example/api', json: async () => Object.assign({ token: 'tok', req }, extra) }, env, waitUntil: p => waits.push(p) }); await Promise.all(waits); return r.json(); };
   const ok = async req => { const r = await call(req); assert.ok(r.ok, JSON.stringify(r)); return r.data; };
 
   // empty database: schema is created, the taxonomy seeded
@@ -179,5 +181,18 @@ global.fetch = async url => {
   assert.strictEqual((await old.rows("SELECT v FROM meta WHERE k = 'schema'"))[0].v, '3');
   assert.ok(names.includes('Magnetic') && names.includes('Current'), 'sensor sub-categories exist');
   inv.resetSchema_(); await inv.ensureSchema(oldEnv);   // running again changes nothing
+  // ---- the Sheet mirror: every change sends a hint to Apps Script (when EXEC_URL is set); the export opens with the token only for that one action
+  const anyPacket = (await ok({ action: 'inv_load' })).groups.flatMap(g => g.comps).flatMap(c => c.packets)[0];
+  await ok({ action: 'inv_txn', packet: anyPacket.id, mode: 'add', qty: 1, who: 'Z' }); assert.strictEqual(hints.length, 0, 'no EXEC_URL, no hint');
+  env.EXEC_URL = 'https://exec';
+  await ok({ action: 'inv_txn', packet: anyPacket.id, mode: 'add', qty: 1, who: 'Z' });
+  assert.deepStrictEqual(hints, [{ token: 'tok', req: { action: 'sync_hint', origin: 'https://stash.example' } }], 'one hint after a change, carrying the address of the app');
+  await call({ action: 'inv_txn', packet: anyPacket.id, mode: 'take', qty: 99999999, who: 'Z' }); assert.strictEqual(hints.length, 1, 'a refused change sends no hint');
+  await ok({ action: 'inv_load' }); assert.strictEqual(hints.length, 1, 'reading sends no hint');
+  const ex = await ok({ action: 'inv_export' }); assert.ok(ex.groups.length && ex.cats.length && ex.boxes.length && ex.log.length && ex.log[0].mpn && ex.log[0].kind && ex.changed > 0, 'export has parts, categories, boxes, the log and the change time');
+  env.PASSWORD = 'pw';
+  const tok = req => onRequestPost({ request: { url: 'https://stash.example/api', json: async () => ({ token: 'tok', req }) }, env, waitUntil: () => {} }).then(r => r.status);
+  assert.strictEqual(await tok({ action: 'inv_export' }), 200, 'the token opens the export even when a password is set'); assert.strictEqual(await tok({ action: 'inv_load' }), 403, 'but nothing else'); assert.strictEqual(await tok({ action: 'inv_txn', packet: 1, mode: 'take', qty: 1 }), 403);
+  delete env.PASSWORD;
   console.log('inventory ok');
 })().catch(e => { console.error(e); process.exit(1); });

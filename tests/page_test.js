@@ -242,6 +242,11 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   const big = mkInv(); for (let i = 0; i < 60; i++) big.groups.push({ id: 100 + i, key: 'P|x' + i, label: 'Part ' + String(i).padStart(2, '0'), cat: 601, comps: [comp(500 + i, 'X-' + i, [pk(900 + i, 1, 1)], { cat: 601 })] });
   p = openPage({ inv_load: big }); await sleep(10); p.byId.t2.click();
   const shown = () => p.byId.app.find(e => e.className === 'tap').length;
+  // opening a group closes the one that was open
+  const tapOf = n => p.byId.app.find(e => e.className === 'tap' && e.textContent.indexOf('Part ' + n) === 0)[0];
+  tapOf('00').click(); assert.strictEqual(btn(p, 'Edit part').length, 1); tapOf('01').click();
+  assert.strictEqual(btn(p, 'Edit part').length, 1, 'only one group is open'); assert.strictEqual(p.byId.app.find(e => /item open/.test(e.className)).length, 1); assert.strictEqual(p.byId.app.find(e => e.className === 'kid')[0].textContent.indexOf('X-1'), 0, 'the open one is the second');
+  tapOf('01').click(); assert.strictEqual(btn(p, 'Edit part').length, 0, 'tapping the open one closes it');
   assert.strictEqual(shown(), 25, 'first page'); assert.ok(/25 of 62 result/.test(p.text()) && /Load more \(37 left\)/.test(p.text()));
   btn(p, 'Load more (37 left)')[0].click(); assert.strictEqual(shown(), 50, 'the next 25'); btn(p, 'Load more (12 left)')[0].click(); assert.strictEqual(shown(), 62); assert.ok(!/Load more/.test(p.text()) && /62 result/.test(p.text()));
   type(inputs(p)[0], 'Part'); assert.strictEqual(shown(), 25, 'a new search starts from the first page'); assert.ok(/25 of 60 result/.test(p.text()));

@@ -2,6 +2,11 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.9.4 (fixes after the fourth phone test)
+- **New (Google Sheet mirror):** the Sheet is written from the app's data, one way (D1 to Sheet), **15 minutes after the last change**. Every change in the app sends a hint to Apps Script (`sync_hint`); a 5-minute trigger (`syncTick`) writes the Sheet when a hint is pending and 15 quiet minutes have passed. Tabs: one per top category (a row per part number: group, value, package, spec, total qty, boxes, part numbers, description, last change), `Packets` (a row per live packet) and `Log` (last 1000 changes). Each run rewrites its tabs completely; old-layout tabs with no new equivalent are cleared and marked. The export is a new Function action (`inv_export`) that the shared token may call even when a password is set (nothing else); no Cloudflare setting changed. One step for the owner: run `syncSetup` once in the Apps Script editor (permission + trigger); `syncNow` writes the Sheet at once.
+- **Changed (Search):** opening a group closes the one that was open.
+- **Changed (Scan page):** a card with two big icon tiles (Live scan, Take photo), a lookup row and a heading per mode; the page titles stay black (the accent colour is for buttons and highlights).
+
 ## 0.9.3 (fixes after the third phone test)
 - **Changed:** one Scan page with an **Add stock | Update stock** switch (the Transact tab is gone; tabs are Scan and Search). Add stock reads a label and shows the add form; Update stock shows the take / add / set count / move panel for a packet already in stock. A known packet scanned in Add stock asks "Do you want to change something?" and Yes switches to Update stock; an unknown one in Update stock offers "Add it as new stock". Update stock has its own orange accent. The mode is remembered.
 - **New:** every take, add, set count and move asks for confirmation first in a pop-up that says what will happen ("Take 5 from X? This packet goes from 50 to 45 pcs."); Cancel does nothing.

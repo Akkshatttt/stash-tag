@@ -35,6 +35,7 @@ function doPost(e) {
 function invCall(token, req) {
   var tok = prop_('TOKEN');
   if (!tok || token !== tok) throw new Error('forbidden');
+  if (req.action === 'sync_hint') return syncHint_(req);   // from the Cloudflare Function after a change: the Sheet mirror runs 15 minutes after the last one
   if (req.action === 'load') return { rows: loadInventory_() };
   if (req.action === 'scan') return scan_(req.texts || req.text, req.supplier);
   if (req.action === 'confirm') return confirm_(req);
