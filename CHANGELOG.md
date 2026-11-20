@@ -2,6 +2,14 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.9.0 (unreleased, not deployed)
+- **New (D1 is now the inventory):** tables for categories (own 2-level taxonomy, Unsorted instead of Misc), groups, parts, boxes, packets (own qty and box, fingerprint unique), and a transaction log with the name of who made each change. Schema versioned in `lib/schema.js`, created on first use. Old Sheet rows are not migrated (clean start); the supplier record cache (`parts`) is kept.
+- **New:** packet fingerprint from the label (`fingerprint_` in Barcode.js): a label already in stock is recognised before any lookup and is never added twice; the page offers add / take / set / move instead. Emptied packets are archived, so their label stays blocked.
+- **New:** take / add / set count / move box on any packet, never below zero; reason on take is a deployment setting (`REQUIRE_REASON=1`, off by default); Count tab (cycle count of a box, differences logged as corrections); live scan recognises a packet in stock and asks how many are added or taken inside the camera overlay; Mouser 2D codes with invoice and line are recognised without a part number.
+- **New:** Search with category tiles that drill down, removable filter chips, an in-stock toggle, groups that open into part numbers and packets, per-part edit of description and category (saved, logged, and remembered for the next new part of that supplier category). Passive descriptions: DigiKey wording, or a template for Mouser parts.
+- **Changed:** the page needs a name (sign-in card, shown on every change) and runs on Cloudflare only: the Apps Script /exec page is retired (it cannot reach D1). Apps Script stays for the Sheet mirror (sync not built yet).
+- **Tests:** `tests/inv_test.js` runs the API on a real SQLite (node:sqlite) behind a D1-shaped wrapper (`tests/d1.js`); `cloud_test.js` now uses it too.
+
 ## 0.8.1 (unreleased)
 - **New:** debug info shows API calls made today (UTC) per provider, DigiKey and Mouser, as N / 1000. The Cloudflare Function counts every product request it sends (retries included, token requests not) in a D1 table `usage` (day, provider, n), created on first use. Page action `usage` reads it; the Apps Script page says the counter lives on the Cloudflare page. Lookups made by Apps Script itself are not counted.
 
