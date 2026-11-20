@@ -2,6 +2,13 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.9.3 (fixes after the third phone test)
+- **Changed:** one Scan page with an **Add stock | Update stock** switch (the Transact tab is gone; tabs are Scan and Search). Add stock reads a label and shows the add form; Update stock shows the take / add / set count / move panel for a packet already in stock. A known packet scanned in Add stock asks "Do you want to change something?" and Yes switches to Update stock; an unknown one in Update stock offers "Add it as new stock". Update stock has its own orange accent. The mode is remembered.
+- **New:** every take, add, set count and move asks for confirmation first in a pop-up that says what will happen ("Take 5 from X? This packet goes from 50 to 45 pcs."); Cancel does nothing.
+- **New:** package is a dropdown of standard sizes plus **Other (type it)** with a text box, for any chip part (inductors rarely have a standard package); the server accepts any typed package.
+- **New:** sensor sub-categories: Motion (accel / gyro / IMU), Magnetic, Temperature & Humidity, Current, Pressure, Optical & Proximity, Other Sensors (migration 3 re-files existing sensors by their supplier category text).
+- **Changed (Search):** compact cards: name and stock on one line (green when in stock, red at 0), one line of description, one line of small facts; the open card is marked with an accent bar and tint; the search words are highlighted; smaller title.
+
 ## 0.9.2 (fixes after the second phone test)
 - **Changed:** important states are now big red or green blocks, not lines of text: PART ALREADY IN STOCK (Scan tab, add form and live scan), PACKET FOUND / USED UP / REMOVED and THIS PACKET IS NOT IN STOCK (Transact), PART NOT FOUND, NEW PART, WARNING; the result banner is larger with a coloured border.
 - **New:** Search shows 25 groups at a time with "Load more (N left)"; a new search or filter starts from the first page; loading more makes no server call.

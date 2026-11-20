@@ -86,6 +86,28 @@
   .modal { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); align-items: flex-end; }
   .sheet { background: #fff; width: 100%; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .tabbar button:disabled { opacity: .4; }
+  .title { font-size: 28px; margin: 4px 0 10px; }
+  .seg { display: flex; background: var(--fill); border-radius: 11px; padding: 3px; margin: 0 0 12px; }
+  .seg button { flex: 1; min-height: 42px; border: 0; border-radius: 9px; background: transparent; font: 600 15px -apple-system, system-ui, sans-serif; color: var(--muted); margin: 0; }
+  .seg button.on { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,.22); }
+  .mode-upd { --blue: #c75f00; --tint: rgba(199,95,0,.13); }
+  .mode-upd .title { color: #c75f00; }
+  .item { padding: 9px 12px; }
+  .item.open { background: #f3f8ff; box-shadow: inset 3px 0 0 var(--blue); }
+  .item .res { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .ttl { font-size: 16px; font-weight: 650; }
+  .dsc { font-size: 13.5px; color: #3c3c43; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dsc.wrap { white-space: normal; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .qty { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .qty.ok { color: var(--good); } .qty.zero { color: var(--bad); }
+  mark { background: #ffe58a; color: inherit; border-radius: 3px; padding: 0 1px; }
+  .kid { padding: 4px 0 4px 10px; margin: 8px 0 0; border-left: 3px solid #c9d8ee; }
+  .kid .ttl { font-size: 15px; } .kid .qty { font-size: 16px; }
+  .pk { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+  .pk button.pill { min-height: 36px; padding: 0 14px; font-size: 14px; }
+  .tiles button { min-height: 46px; font-size: 14px; }
+  .search input { font-size: 16px; }
   .alert { border-radius: 12px; padding: 12px 14px; margin: 0 0 10px; border: 2px solid; }
   .alert .at { font-size: 19px; font-weight: 800; letter-spacing: .3px; }
   .alert .al { font-size: 16px; font-weight: 600; margin-top: 3px; }
@@ -97,7 +119,7 @@
 </style>
 </head>
 <body>
-<div class="tabbar"><button id="t1"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>Scan</button><button id="t2"><svg viewBox="0 0 24 24"><path d="M7 7h12M16 4l3 3-3 3M17 17H5M8 14l-3 3 3 3"/></svg>Transact</button><button id="t3"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div>
+<div class="tabbar"><button id="t1"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>Scan</button><button id="t2"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div>
 <div id="live" class="live"></div>
 <div id="msg" class="msg" style="display:none"></div>
 <div id="modal" class="modal"></div>
@@ -115,7 +137,9 @@ if (h) { TOKEN = decodeURIComponent(h[1]); store('token', TOKEN); try { history.
 TOKEN = TOKEN || store('token') || '';
 var PASS = store('pass') || '';
 var st = { scan: null, tx: null, msg: '', kind: 'good', pend: '', inv: null, rows: [], open: {}, redraw: null };   // last server answers; rows = one search row per group
-var ui = { dbg: store('debug') === true, who: store('who') || '', text: '', qty: '', box: '', newBox: '', cat: 0, descr: '', descrEdited: false, fix: {}, from: [], query: '', sort: '', dir: 'asc', top: 0, sub: 0, stock: false, countBox: '-', counts: {} };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+var ui = { mode: store('mode') === 'upd' ? 'upd' : 'add', dbg: store('debug') === true, who: store('who') || '', text: '', qty: '', box: '', newBox: '', cat: 0, descr: '', descrEdited: false, fix: {}, from: [], query: '', sort: '', dir: 'asc', top: 0, sub: 0, stock: false, countBox: '-', counts: {} };   // what the user typed; typing never redraws (keeps the phone keyboard open)
+function scanFrom() { return ui.mode === 'upd' ? 'tx' : 'scan'; }   // what a scan answer is for: a new packet (scan) or a packet in stock (tx)
+function setMode(m) { ui.mode = m; store('mode', m); st.scan = null; st.tx = null; st.pick = null; }
 var cats = {}, boxes = {}, PAGE = 25;   // Search shows PAGE groups at a time
 var UNSORTED = 1400;
 function signedIn() { return !!(TOKEN || PASS); }
@@ -210,7 +234,7 @@ function B(text, cls, fn) {
   return b;
 }
 function lock(on, btn, label) {
-  busy = on; reg.forEach(function (b) { b.disabled = on || !!(b.need && b.need()); }); [t1, t2, t3].forEach(function (t) { if (t) t.disabled = on; });
+  busy = on; reg.forEach(function (b) { b.disabled = on || !!(b.need && b.need()); }); [t1, t2].forEach(function (t) { if (t) t.disabled = on; });
   if (btn) { if (on) { btn._t = btn.textContent; btn.textContent = label || 'Saving...'; } else if (btn._t) { btn.textContent = btn._t; btn._t = ''; } }
 }
 function paintBanner() {
@@ -236,11 +260,11 @@ function run(req, ok, o) {
   invoke(req, function (r) { lock(false, o.btn); st.pend = ''; ok(r); render(); },
     function (e) { lock(false, o.btn); st.pend = ''; flash('Error: ' + (e && e.message || e), 'bad'); if (o.fail) o.fail(e); });
 }
-function ask(msg, yesLabel, onYes, noLabel) {   // a confirmation sheet
+function ask(msg, yesLabel, onYes, noLabel, detail) {   // a confirmation sheet
   var m = document.getElementById('modal'), close = function () { m.style.display = 'none'; m.innerHTML = ''; };
   var yes = el('button', { className: 'primary', text: yesLabel }), no = el('button', { className: 'sec', text: noLabel || 'Go back' });
   yes.addEventListener('click', function () { close(); onYes(); }); no.addEventListener('click', close);
-  m.innerHTML = ''; m.style.display = 'flex'; m.appendChild(el('div', { className: 'sheet' }, [el('div', { className: 'big', text: msg }), yes, no]));
+  m.innerHTML = ''; m.style.display = 'flex'; m.appendChild(el('div', { className: 'sheet' }, [el('div', { className: 'big', text: msg }), detail ? el('div', { className: 'sub', text: detail }) : null, yes, no]));
 }
 function field(label, input, o) {   // label above, control below; o: {req: true, soft: true, hint, bad (message)}
   o = o || {};
@@ -335,7 +359,7 @@ function offerPick(text) {
   if (!st.pick.length) flash('Read ' + text.length + ' barcode(s), part number not found. Retake the photo closer to the label, or type the part number below.', 'bad');
 }
 function doScan(text, fix, from) {   // text: typed string, or the array of every barcode read from a photo; fix(answer) adjusts it before the card
-  from = from || tab; ui.text = Array.isArray(text) ? '' : text; st.pick = null; st.pickTab = from;
+  from = from || scanFrom(); ui.text = Array.isArray(text) ? '' : text; st.pick = null; st.pickTab = from;
   if (Array.isArray(text) && !hasPn(text) && !/\[\)>/.test(text.join(''))) { offerPick(text); return render(); }   // bars only, no part number: nothing to look up
   var req = scanReq(text);
   run(req, function (r) {
@@ -362,7 +386,7 @@ function startLive() {
     var close = el('button', { className: 'sec', text: 'Close' }); close.addEventListener('click', function () { stopLive(); render(); });
     var box = liveBox(); box.innerHTML = ''; box.style.display = 'block';
     [el('div', { className: 'title', text: 'Live scan' }), video, el('div', { className: 'group' }, [el('div', { className: 'pad' }, [status, dbgEl])]), popup, close].forEach(function (c) { box.appendChild(c); });
-    live = { from: tab, stream: stream, video: video, status: status, dbgEl: dbgEl, popup: popup, seen: {}, asked: {}, fails: 0, firstAt: 0, asking: false, paused: false, stop: false };
+    live = { from: scanFrom(), stream: stream, video: video, status: status, dbgEl: dbgEl, popup: popup, seen: {}, asked: {}, fails: 0, firstAt: 0, asking: false, paused: false, stop: false };
     if (video.play) video.play();
     liveTick();
   }, function (e) { flash('Error: live camera blocked (' + (e && e.name) + ': ' + (e && e.message) + '). Use the photo button.', 'bad'); render(); });
@@ -438,13 +462,23 @@ function catPick(cur) {   // two dropdowns (category, sub-category); get() = the
   topSel.addEventListener('change', function () { fill(); if (api.onTop) api.onTop(); }); fill();
   return api;
 }
+/** Package: a dropdown of standard sizes plus "Other (type it)", which shows a text box (inductors rarely have a standard package; any part can have an odd one). */
+var OTHER = 'Other (type it)';
+function pkgCtl(v, onChange) {
+  var cur = v.package, std = !cur || PKGS.indexOf(cur) >= 0, sel = selectOf(PKGS.concat([OTHER]), std ? cur : OTHER, 'Choose a size...');
+  var txt = el('input', { placeholder: 'e.g. 7x7 shielded', value: std ? '' : cur });
+  txt.style.display = std ? 'none' : 'block';
+  var sync = function () { var other = sel.value === OTHER; txt.style.display = other ? 'block' : 'none'; v.package = other ? txt.value.trim() : sel.value; onChange(); };
+  sel.addEventListener('change', sync); txt.addEventListener('input', sync);
+  return el('div', { className: 'stack' }, [sel, txt]);
+}
 /** The value / package / secondary fields of a chip passive, bound to v. -> {nodes, crit(): labels still blank, soft(): optional labels still blank}. */
 function passiveFields(kind, v, from, onChange) {
   var defs = PFIELDS[kind], fields = {}, nodes = defs.map(function (d) {
-    var ctl = d[4] === 'pkg' ? selectOf(PKGS, v.package, 'Choose a size...') : d[4] === 'diel' ? selectOf(DIELS, v.diel, 'Unknown') : el('input', { placeholder: d[2], value: v[d[0]] || '' });
+    var isPkg = d[4] === 'pkg', ctl = isPkg ? pkgCtl(v, onChange) : d[4] === 'diel' ? selectOf(DIELS, v.diel, 'Unknown') : el('input', { placeholder: d[2], value: v[d[0]] || '' });
     var read = from.indexOf(d[0] === 'tol' ? 'tolerance' : d[0]) >= 0;
     var f = field(d[1], ctl, { req: !!d[3], soft: !d[3], hint: read ? 'Read from the part number: please check it' : '' });
-    ctl.addEventListener(ctl.tag === 'select' ? 'change' : 'input', function () { v[d[0]] = ctl.value; onChange(); });
+    if (!isPkg) ctl.addEventListener(ctl.tag === 'select' ? 'change' : 'input', function () { v[d[0]] = ctl.value; onChange(); });
     fields[d[0]] = f; return f;
   });
   var blank = function (req) { return defs.filter(function (d) { return !!d[3] === req && !v[d[0]]; }); };
@@ -452,7 +486,7 @@ function passiveFields(kind, v, from, onChange) {
     soft: function () { return blank(false).map(function (d) { return d[1].toLowerCase(); }); } };
 }
 function describeFix(kind, v) { return v.value && v.package ? describePassive_(kind, v.value, v.package, { tol: v.tol, pow: v.pow, volt: v.volt, diel: v.diel, cur: v.cur }) : ''; }
-function needName(out) { if (ui.who) return false; if (out) out.textContent = 'Enter your name first (bottom of the Scan tab).'; else flash('Error: enter your name first (bottom of the Scan tab).', 'bad'); return true; }
+function needName(out) { if (ui.who) return false; if (out) out.textContent = 'Enter your name first (bottom of the Add stock page).'; else flash('Error: enter your name first (bottom of the Add stock page).', 'bad'); return true; }
 function packetLine(p) { return [p.qty + ' pcs', p.box && boxes[p.box] ? 'box ' + boxes[p.box] : 'no box', p.lot && 'lot ' + p.lot, p.dc && 'date ' + p.dc, (p.by || '?') + ' ' + fmtDate(p.upd)].filter(Boolean).join(' · '); }
 function compOf(r) { return r.group && r.group.comps[0]; }
 function packetOf(d) { var c = compOf(d); return c && c.packets.filter(function (x) { return x.id === d.packetId; })[0] || { id: d.packetId, qty: d.qty, box: d.box }; }
@@ -460,8 +494,8 @@ function summary(r, p, mode, n) {   // what a transaction did, for the banner
   var c = compOf(r), q = c ? (c.packets.filter(function (x) { return x.id === p.id; })[0] || { qty: 0 }).qty : 0, name = c ? c.mpn : 'packet';
   return (mode === 'take' ? 'Took ' + n + ' from ' + name : mode === 'add' ? 'Added ' + n + ' to ' + name : mode === 'set' ? 'Set ' + name + ' to ' + n : 'Moved ' + name + ' to box ' + (boxes[(c && c.packets.filter(function (x) { return x.id === p.id; })[0] || {}).box] || '?')) + '. ' + q + ' in this packet now.';
 }
-/** Take / add / set the count of one packet, or move it to another box. */
-function txnBox(p, done) {
+/** Take / add / set the count of one packet, or move it to another box. Every change asks "are you sure?" first (a pop-up with what will happen), so a stray tap does nothing. */
+function txnBox(p, name, done) {
   var q = el('input', { type: 'number', inputMode: 'numeric', placeholder: 'e.g. 10' }), qf = field('Quantity', q, { hint: 'Take or add this many, or set the packet to exactly this count' });
   var why = st.inv && st.inv.requireReason ? el('input', { placeholder: 'e.g. board X build' }) : null, wf = why && field('What is it for', why, { req: true });
   var bx = boxSelect(p.box), bf = field('Move to box', bx);
@@ -473,14 +507,18 @@ function txnBox(p, done) {
     return B(label, cls || 'pill', function (b) {
       var n = Math.floor(+q.value);
       if (!(n >= min) || q.value === '') return qf.setBad(min ? 'Enter a whole number above 0' : 'Enter a whole number (0 or more)');
+      if (mode === 'take' && n > p.qty) return qf.setBad('Only ' + p.qty + ' in this packet');
       if (mode === 'take' && wf && !why.value.trim()) return wf.setBad('Say what the parts are for');
       qf.setBad(''); if (wf) wf.setBad('');
-      send({ mode: mode, qty: String(n) }, b, busyLabel, n);
+      var after = mode === 'take' ? p.qty - n : mode === 'add' ? p.qty + n : n;
+      ask(mode === 'take' ? 'Take ' + n + ' from ' + name + '?' : mode === 'add' ? 'Add ' + n + ' to ' + name + '?' : 'Set ' + name + ' to ' + n + '?',
+        mode === 'take' ? 'Yes, take ' + n : mode === 'add' ? 'Yes, add ' + n : 'Yes, set to ' + n, function () { send({ mode: mode, qty: String(n) }, b, busyLabel, n); }, 'Cancel',
+        'This packet goes from ' + p.qty + ' to ' + after + ' pcs.');
     });
   };
   var mv = B('Move', 'pill', function (b) {
     if (!bx.value) return bf.setBad('Choose a box'); if (bx.value === String(p.box)) return bf.setBad('It is in this box already'); bf.setBad('');
-    send({ mode: 'move', box: bx.value }, b, 'Moving...', 0);
+    ask('Move ' + name + ' to box ' + (boxes[bx.value] || '?') + '?', 'Yes, move', function () { send({ mode: 'move', box: bx.value }, b, 'Moving...', 0); }, 'Cancel', 'From box ' + (boxes[p.box] || '?') + ' to box ' + (boxes[bx.value] || '?') + '.');
   });
   return el('div', {}, [qf, el('div', { className: 'row2' }, [mk('Take', 'take', 'Taking...', 1), mk('Add', 'add', 'Adding...', 1), mk('Set count', 'set', 'Saving...', 0)]), wf, bf, el('div', { className: 'row2' }, [mv])]);
 }
@@ -517,7 +555,7 @@ function liveAsk(texts, next) {
       l.popup.appendChild(el('div', { className: 'card' }, [alert_('bad', 'PART ALREADY IN STOCK', []), el('div', { className: 'big', text: c ? c.mpn : 'Packet ' + r.dup.packetId }), el('div', { text: c ? c.descr : '' }),
         el('div', { className: r.dup.st ? 'small warn' : 'small', text: r.dup.st === 1 ? 'This packet was used up (0 left).' : r.dup.st === 2 ? 'This packet was removed.' : 'In stock: ' + packetLine(pk) }),
         el('div', { className: 'big', text: 'Change something?' }),
-        r.dup.st === 2 ? null : yes('Yes, change it', function () { stopLive(); st.tx = r; st.scan = null; tab = 'tx'; flash('', 'good'); render(); }), no('No, keep scanning')]));
+        r.dup.st === 2 ? null : yes('Yes, update stock', function () { stopLive(); setMode('upd'); st.tx = r; flash('', 'good'); render(); }), no('No, keep scanning')]));
       return;
     }
     if (!r.rec) {
@@ -525,7 +563,7 @@ function liveAsk(texts, next) {
       liveReset('Read ' + texts.length + ' barcode(s), no part found' + (r.warnings && r.warnings[0] ? ': ' + r.warnings[0] : '') + '. Keep aiming.'); return next();
     }
     l.paused = true; l.status.textContent = from === 'tx' ? 'This packet is not in stock.' : 'Part detected.';
-    var use = from === 'tx' ? yes('Add it in the Scan tab', function () { stopLive(); applyScan(r); tab = 'scan'; flash('', 'good'); render(); }) : yes('Use this part', function () { stopLive(); ui.text = ''; applyScan(r); flash('', 'good'); render(); });
+    var use = from === 'tx' ? yes('Add it as new stock', function () { stopLive(); setMode('add'); applyScan(r); flash('', 'good'); render(); }) : yes('Use this part', function () { stopLive(); ui.text = ''; applyScan(r); flash('', 'good'); render(); });
     l.popup.innerHTML = '';
     l.popup.appendChild(el('div', { className: 'card' }, [from === 'tx' ? alert_('bad', 'NOT IN STOCK', []) : alert_('good', 'PART DETECTED', []), el('div', { className: 'big', text: r.rec.mpn }),
       r.parsed && r.parsed.loose ? el('div', { className: 'small warn', text: 'Unverified: guessed from a bar on the label. Check it against the packet.' }) : null,
@@ -579,7 +617,7 @@ function dupCard(s) {   // this packet is already in stock: say so loudly, then 
   return el('div', {}, [alert_('bad', 'PART ALREADY IN STOCK', [c ? c.mpn + (c.descr ? ' · ' + c.descr : '') : 'Packet ' + d.packetId,
       d.st === 1 ? 'This packet was used up (0 left).' : d.st === 2 ? 'This packet was removed. Ask an admin before adding it again.' : 'This packet: ' + packetLine(pk)]),
     el('div', { className: 'group' }, [el('div', { className: 'pad' }, [el('div', { className: 'big', text: 'Do you want to change something?' }),
-      d.st === 2 ? null : B('Yes, open it in Transact', 'primary', function () { st.tx = s; st.scan = null; tab = 'tx'; render(); }), B('No, scan another', 'sec', function () { st.scan = null; render(); })])])]);
+      d.st === 2 ? null : B('Yes, update stock', 'primary', function () { setMode('upd'); st.tx = s; render(); }), B('No, scan another', 'sec', function () { st.scan = null; render(); })])])]);
 }
 function addForm(s) {
   var r = s.rec, ex = s.comp && s.comp.group.comps[0], pick = catPick(ui.cat), kind = ex ? '' : kindOf(pick.get() || ui.cat), root = el('div', {});
@@ -666,10 +704,10 @@ function txView() {
     root.appendChild(alert_(gone ? 'bad' : 'good', d.st === 1 ? 'PACKET USED UP' : d.st === 2 ? 'PACKET REMOVED' : 'PACKET FOUND', [c ? c.mpn + (c.descr ? ' · ' + c.descr : '') : 'Packet ' + d.packetId,
       d.st === 1 ? 'Nothing left in it. Add stock to bring it back.' : d.st === 2 ? 'Ask an admin.' : 'This packet: ' + packetLine(pk)]));
     root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, [c && c.by ? el('div', { className: 'small', text: 'Last change: ' + c.by + ' ' + fmtDate(c.ts) }) : null,
-      d.st === 2 ? null : txnBox(pk, function (msg) { st.tx = null; flash(msg, 'good'); })])]));
+      d.st === 2 ? null : txnBox(pk, c ? c.mpn : 'this packet', function (msg) { st.tx = null; flash(msg, 'good'); })])]));
   } else if (t && t.rec) {
-    root.appendChild(alert_('bad', 'THIS PACKET IS NOT IN STOCK', ['Nothing to take or change. Add it as a new packet first.']));
-    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(t.rec, t).concat([B('Add it in the Scan tab', 'primary', function () { applyScan(t); tab = 'scan'; render(); })]))]));
+    root.appendChild(alert_('bad', 'THIS PACKET IS NOT IN STOCK', ['Nothing to take or change. Add it as new stock first.']));
+    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(t.rec, t).concat([B('Add it as new stock', 'primary', function () { setMode('add'); applyScan(t); render(); })]))]));
   } else if (t) root.appendChild(notFound(t));
   else root.appendChild(el('div', { className: 'foot', text: 'Scan a packet that is already in stock to take parts out, add parts back, correct its count or move it to another box.' }));
   scanControls('tx', !!t).forEach(function (n) { root.appendChild(n); });
@@ -726,27 +764,43 @@ function searchView() {
   return root;
 }
 function toggle(k) { st.open[k] = !st.open[k]; st.redraw(); }
-function groupCard(r) {
-  var g = r.g, open = st.open['g' + g.id], multi = g.comps.length > 1;
-  var head = el('div', { className: 'tap' }, [el('div', { className: 'res' }, [el('span', { className: 'big', text: g.label }), el('span', { className: 'qty', text: String(r.qty) })]),
-    el('div', { className: 'sub', text: [r.category, multi ? g.comps.length + ' part numbers' : '', r.location && ('box ' + r.location), r.spec].filter(Boolean).join(' · ') }),
-    el('div', { text: multi ? '' : g.comps[0].descr })]);
+function hl(text, q) {   // text with the search words marked
+  var words = squash(q || '').split(' ').filter(function (w) { return w.length > 1; });
+  if (!words.length || !text) return el('span', { text: text || '' });
+  var re = new RegExp('(' + words.map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')', 'ig'), out = [];
+  String(text).split(re).forEach(function (part, i) { if (part) out.push(i % 2 ? el('mark', { text: part }) : el('span', { text: part })); });
+  return el('span', {}, out);
+}
+function groupCard(r) {   // compact: name and stock on one line, one line of description, one line of small facts; the open one is marked
+  var g = r.g, open = st.open['g' + g.id], multi = g.comps.length > 1, q = ui.query;
+  var meta = [r.category, multi ? g.comps.length + ' part numbers' : '', r.location && ('box ' + r.location), r.spec].filter(Boolean).join(' · ');
+  var head = el('div', { className: 'tap' }, [el('div', { className: 'res' }, [el('span', { className: 'ttl' }, [hl(g.label, q)]), el('span', { className: 'qty ' + (r.qty > 0 ? 'ok' : 'zero'), text: String(r.qty) })]),
+    multi ? null : el('div', { className: 'dsc' }, [hl(g.comps[0].descr, q)]), el('div', { className: 'meta', text: meta })]);
   head.addEventListener('click', function () { toggle('g' + g.id); });
-  return el('div', { className: 'item' }, [head].concat(open ? g.comps.map(function (c) { return compBlock(c, g); }) : []));
+  return el('div', { className: 'item' + (open ? ' open' : '') }, [head].concat(open ? g.comps.map(function (c) { return compBlock(c, g); }) : []));
 }
 function compBlock(c, g) {
-  var tot = c.packets.reduce(function (a, p) { return a + p.qty; }, 0), kids = [el('div', { className: 'res' }, [el('span', { className: 'big', text: c.mpn }), el('span', { className: 'qty', text: String(tot) })]),
-    el('div', { className: 'small', text: [c.mfr, c.dkpn, c.mopn, c.src === 1 ? 'DigiKey' : c.src === 2 ? 'Mouser' : 'other'].filter(Boolean).join(' · ') }), el('div', { text: c.descr }),
-    el('div', { className: 'small', text: c.by ? 'Last change: ' + c.by + ' ' + fmtDate(c.ts) : 'No changes yet' })];
+  var q = ui.query, tot = c.packets.reduce(function (a, p) { return a + p.qty; }, 0), kids = [el('div', { className: 'res' }, [el('span', { className: 'ttl' }, [hl(c.mpn, q)]), el('span', { className: 'qty ' + (tot > 0 ? 'ok' : 'zero'), text: String(tot) })]),
+    el('div', { className: 'dsc wrap' }, [hl(c.descr, q)]),
+    el('div', { className: 'meta', text: [c.mfr, c.dkpn, c.mopn, c.src === 1 ? 'DigiKey' : c.src === 2 ? 'Mouser' : 'other'].filter(Boolean).join(' · ') }),
+    el('div', { className: 'meta', text: c.by ? 'Last change: ' + c.by + ' ' + fmtDate(c.ts) : 'No changes yet' })];
   kids.push(el('div', { className: 'row2' }, [B('Edit part', 'pill', function () { toggle('e' + c.id); })]));
   if (st.open['e' + c.id]) kids.push(editBox(c, g, function (msg) { st.open['e' + c.id] = false; flash(msg, 'good'); }));
-  if (!c.packets.length) kids.push(el('div', { className: 'small', text: 'No packets in stock.' }));
+  if (!c.packets.length) kids.push(el('div', { className: 'meta', text: 'No packets in stock.' }));
   c.packets.forEach(function (p) {
-    kids.push(el('div', { className: 'row2' }, [el('span', { className: 'sub', text: packetLine(p) }), B('Edit packet', 'pill', function () { toggle('p' + p.id); })]));
-    if (st.open['p' + p.id]) kids.push(el('div', { className: 'form' }, [txnBox(p, function (msg) { st.open['p' + p.id] = false; flash(msg, 'good'); })]));
+    kids.push(el('div', { className: 'pk' }, [el('span', { text: packetLine(p) }), B('Edit packet', 'pill', function () { toggle('p' + p.id); })]));
+    if (st.open['p' + p.id]) kids.push(el('div', { className: 'form' }, [txnBox(p, c.mpn, function (msg) { st.open['p' + p.id] = false; flash(msg, 'good'); })]));
   });
   return el('div', { className: 'kid' }, kids);
 }
+
+// ---- the Scan page: one place, two jobs. Add stock = a new packet; Update stock = take, add, set the count of or move a packet that is already in stock.
+function seg() {
+  return el('div', { className: 'seg' }, [['add', 'Add stock'], ['upd', 'Update stock']].map(function (m) {
+    return B(m[1], 'seg-b' + (ui.mode === m[0] ? ' on' : ''), function () { if (ui.mode !== m[0]) { setMode(m[0]); render(); } });
+  }));
+}
+function scanPage() { return el('div', {}, [seg(), ui.mode === 'upd' ? txView() : addView()]); }
 
 // ---- Count tab: cycle count of one box; differences are logged as corrections
 function countView() {   // not reachable from the tab bar while the Count tab is hidden (set tab = 'count' to bring it back)
@@ -777,19 +831,20 @@ function countView() {   // not reachable from the tab bar while the Count tab i
 
 function render() {
   reg = [];
-  [[t1, 'scan'], [t2, 'tx'], [t3, 'search']].forEach(function (x) { x[0].className = tab === x[1] ? 'on' : ''; x[0].disabled = busy; });
+  [[t1, 'scan'], [t2, 'search']].forEach(function (x) { x[0].className = tab === x[1] ? 'on' : ''; x[0].disabled = busy; });
   var app = document.getElementById('app');
   app.innerHTML = '';
+  app.className = 'mode-' + (tab === 'scan' ? ui.mode : 'add');   // update mode wears a different accent colour
   paintBanner();
-  if (signedIn()) app.appendChild(el('div', { className: 'title', text: { scan: 'Scan', tx: 'Transact', search: 'Search', count: 'Count' }[tab] }));
+  if (signedIn()) app.appendChild(el('div', { className: 'title', text: tab === 'scan' ? (ui.mode === 'upd' ? 'Update stock' : 'Add stock') : { search: 'Search', count: 'Count' }[tab] }));
   if (!signedIn()) return app.appendChild(loginView());
-  app.appendChild({ scan: addView, tx: txView, search: searchView, count: countView }[tab]());
+  app.appendChild({ scan: scanPage, search: searchView, count: countView }[tab]());
 }
-var t1 = document.getElementById('t1'), t2 = document.getElementById('t2'), t3 = document.getElementById('t3');
+var t1 = document.getElementById('t1'), t2 = document.getElementById('t2');
 if (signedIn() && store('inv2')) setInv(store('inv2'));
 loadInv();
 if (ui.dbg) loadUsage();
-[[t1, 'scan'], [t2, 'tx'], [t3, 'search']].forEach(function (x) { x[0].onclick = function () { if (busy) return; tab = x[1]; render(); }; });
+[[t1, 'scan'], [t2, 'search']].forEach(function (x) { x[0].onclick = function () { if (busy) return; tab = x[1]; render(); }; });
 render();
 </script>
 </body>

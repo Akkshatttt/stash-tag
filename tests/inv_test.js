@@ -113,7 +113,6 @@ global.fetch = async url => {
   let e2 = await call({ action: 'inv_add', rec: mrec, qty: 5, who: 'Hal' }); assert.ok(!e2.ok && /box/.test(e2.error), 'no box, no add');
   e2 = await call({ action: 'inv_add', rec: mrec, qty: 5, box: 9999, who: 'Hal' }); assert.ok(!e2.ok && /box/.test(e2.error), 'unknown box');
   e2 = await call({ action: 'inv_add', rec: mrec, qty: 5, box: box.id, who: 'Hal' }); assert.ok(!e2.ok && /package/.test(e2.error) && !/box/.test(e2.error), 'package missing: ' + e2.error);
-  e2 = await call({ action: 'inv_add', rec: mrec, qty: 5, box: box.id, fix: { package: 'big' }, who: 'Hal' }); assert.ok(!e2.ok && /case size/.test(e2.error));
   e2 = await call({ action: 'inv_add', rec: mrec, qty: 5, box: box.id, fix: { package: '0603', value: 'abc' }, who: 'Hal' }); assert.ok(!e2.ok && /not understood/.test(e2.error));
   assert.ok(!(await ok({ action: 'inv_load' })).groups.some(g => g.comps.some(c => c.mpn === 'XYZ-9')), 'a refused add leaves nothing behind');
   const fixed = await ok({ action: 'inv_add', rec: mrec, qty: 5, box: box.id, fix: { package: '0603', diel: '', pow: '1/10W' }, who: 'Hal', rid: 'rq1' });
@@ -136,6 +135,13 @@ global.fetch = async url => {
   assert.ok(!(await ok({ action: 'inv_load' })).groups.some(g => g.key === 'R|2.2k|0603'), 'the old group is gone');
   assert.ok((await ok({ action: 'inv_hist', comp: xid })).some(x => x.kind === 'edit' && /R\|2.2k\|0603 to R\|4.7k\|0805/.test(x.note)));
 
+  // an inductor has no standard package: whatever the person types is the package (also for resistors and capacitors)
+  const ind = { supplier: 'Mouser', mpn: 'IND-1', manufacturer: 'X', description: 'Fixed Inductors 10uH 2A', categoryPath: 'Fixed Inductors', category: 'Inductors', value: '10uH', package: '', sp: { cur: '2A' }, spec: '2A', missing: ['package'], groupKey: 'P|ind1' };
+  e2 = await call({ action: 'inv_add', rec: ind, qty: 3, box: box.id, who: 'Hal' }); assert.ok(!e2.ok && /package/.test(e2.error), 'an inductor still needs a package');
+  const il = await ok({ action: 'inv_add', rec: ind, qty: 3, box: box.id, fix: { package: '7x7 shielded' }, who: 'Hal' });
+  assert.strictEqual(il.group.key, 'L|10uH|7x7 shielded'); assert.strictEqual(il.group.comps[0].descr, 'FIXED IND 10uH 2A 7x7 shielded'); assert.strictEqual(il.group.cat, 301);
+  const ie = await ok({ action: 'inv_edit', comp: il.group.comps[0].id, fix: { package: 'Other' }, who: 'Hal' }); assert.strictEqual(ie.group.key, 'L|10uH|Other');
+
   // ---- category by type, and the migration that re-files an old database (Chip / Through Hole were retired)
   const sch = await import(base + '/lib/schema.js');
   const cf = o => sch.categoryFor(o);
@@ -151,22 +157,27 @@ global.fetch = async url => {
   assert.strictEqual(cf({ path: 'Capacitors > Tantalum - Polymer Capacitors', descr: '', spec: '', value: '' }), 203);
   assert.strictEqual(cf({ path: 'Integrated Circuits (ICs) > Power Management (PMIC) > Voltage Regulators', descr: '', spec: '' }), 601);
   assert.strictEqual(cf({ path: 'Something unknown', descr: '', spec: '' }), 1400);
+  const sensor = (path, descr) => cf({ path: 'Sensors, Transducers > ' + path, descr: descr || '' });
+  assert.strictEqual(sensor('Accelerometers'), 1101); assert.strictEqual(sensor('Motion Sensors - IMUs (Inertial Measurement Units)'), 1101); assert.strictEqual(sensor('Gyroscopes'), 1101);
+  assert.strictEqual(sensor('Magnetic Sensors - Linear, Compass (ICs)'), 1102); assert.strictEqual(sensor('Temperature Sensors - Analog and Digital Output'), 1103); assert.strictEqual(sensor('Humidity, Moisture Sensors'), 1103);
+  assert.strictEqual(sensor('Current Sensors'), 1104); assert.strictEqual(sensor('Pressure Sensors, Transducers'), 1105); assert.strictEqual(sensor('Optical Sensors - Ambient Light, IR, UV Sensors'), 1106); assert.strictEqual(sensor('Proximity Sensors'), 1106); assert.strictEqual(sensor('Something else'), 1107);
 
   const old = makeD1(), oldEnv = { DB: old };
   for (const [sql, args] of sch.MIGRATIONS[0]) await old.prepare(sql).bind(...(args || [])).run();   // the v0.9.0 database
   await old.prepare("INSERT INTO meta (k, v) VALUES ('schema', '1')").run();
   const ins = (sql, ...a) => old.prepare(sql).bind(...a).run();
-  await ins("INSERT INTO grp (id, gkey, cat, label) VALUES (1, 'R|0|0402', 101, 'Resistor 0 0402'), (2, 'R|10k|0603', 101, 'Resistor 10k 0603'), (3, 'R|1k|axial', 102, 'x'), (4, 'C|100nF|0402', 201, 'Capacitor')");
-  await ins("INSERT INTO comp (id, grp, mkey, mpn, descr, path, spec, src, cat) VALUES (1, 1, 'a', 'A', 'RES 0 OHM JUMPER 1/16W 0402', 'Resistors > Chip Resistor - Surface Mount', '', 1, NULL), (2, 2, 'b', 'B', 'RES 10K 0.1% 0603', 'Resistors > Chip Resistor - Surface Mount', '0.1%', 1, 101), (3, 3, 'c', 'C', 'RES 1K', 'Through Hole Resistors', '5%', 2, NULL), (4, 4, 'd', 'D', 'CAP', 'Ceramic Capacitors', '', 1, NULL)");
+  await ins("INSERT INTO grp (id, gkey, cat, label) VALUES (1, 'R|0|0402', 101, 'Resistor 0 0402'), (2, 'R|10k|0603', 101, 'Resistor 10k 0603'), (3, 'R|1k|axial', 102, 'x'), (4, 'C|100nF|0402', 201, 'Capacitor'), (5, 'P|mpu6050', 1100, 'MPU6050')");
+  await ins("INSERT INTO comp (id, grp, mkey, mpn, descr, path, spec, src, cat) VALUES (1, 1, 'a', 'A', 'RES 0 OHM JUMPER 1/16W 0402', 'Resistors > Chip Resistor - Surface Mount', '', 1, NULL), (2, 2, 'b', 'B', 'RES 10K 0.1% 0603', 'Resistors > Chip Resistor - Surface Mount', '0.1%', 1, 101), (3, 3, 'c', 'C', 'RES 1K', 'Through Hole Resistors', '5%', 2, NULL), (4, 4, 'd', 'D', 'CAP', 'Ceramic Capacitors', '', 1, NULL), (5, 5, 'e', 'MPU6050', 'IMU', 'Sensors, Transducers > Motion Sensors - IMUs', '', 1, NULL)");
   await ins("INSERT INTO catmap (src, path, cat) VALUES (1, 'Resistors > Chip Resistor - Surface Mount', 101), (1, 'Integrated Circuits (ICs) > Power Management (PMIC)', 601)");
   inv.resetSchema_(); await inv.ensureSchema(oldEnv);
   const g = Object.fromEntries((await old.rows('SELECT id, cat FROM grp')).map(r => [r.id, r.cat]));
-  assert.deepStrictEqual(g, { 1: 109, 2: 107, 3: 106, 4: 201 }, 'groups re-filed by type; others untouched');
+  assert.deepStrictEqual(g, { 1: 109, 2: 107, 3: 106, 4: 201, 5: 1101 }, 'groups re-filed by type (sensors too); others untouched');
   assert.strictEqual((await old.rows('SELECT cat FROM comp WHERE id = 2'))[0].cat, 106, 'hand override on a retired sub-category moves to General Purpose');
   assert.deepStrictEqual((await old.rows('SELECT cat FROM catmap')).map(r => r.cat), [601], 'coarse passive mappings forgotten, others kept');
   const names = (await old.rows('SELECT name FROM cat')).map(r => r.name);
   assert.ok(!names.includes('Chip') && !names.includes('Through Hole') && names.includes('MLCC') && names.includes('Precision'));
-  assert.strictEqual((await old.rows("SELECT v FROM meta WHERE k = 'schema'"))[0].v, '2');
+  assert.strictEqual((await old.rows("SELECT v FROM meta WHERE k = 'schema'"))[0].v, '3');
+  assert.ok(names.includes('Magnetic') && names.includes('Current'), 'sensor sub-categories exist');
   inv.resetSchema_(); await inv.ensureSchema(oldEnv);   // running again changes nothing
   console.log('inventory ok');
 })().catch(e => { console.error(e); process.exit(1); });
