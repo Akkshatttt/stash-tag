@@ -97,3 +97,20 @@ function partKeys_(parsed) {
   cands.forEach(function (c) { var k = normPn(c.pn); if (keys.indexOf(k) < 0) keys.push(k); });
   return { cands: cands, keys: keys };
 }
+
+/** Stable id of one physical packet, read from its 2D label ('' when the label has no order data, so the packet cannot be recognised again).
+ *  DigiKey: invoice, sales order, packing list, PO, lot, date code + part number + qty. Mouser: invoice + line + PO + qty (its 2D code has no part
+ *  number, and an invoice line is one part). There is no per-packet serial on either label: two identical bags of one order line collide. */
+function fingerprint_(parsed) {
+  var f = parsed.fields || {}, q = squash(f.Q || '');
+  var pick = function (ks) { return ks.map(function (k) { return squash(f[k] || ''); }); };
+  if (parsed.supplier === 'Mouser') {
+    var m = pick(['11K', '14K', 'K']);
+    return m[0] && m[1] ? 'M|' + m.join('|') + '|' + q : '';
+  }
+  if (parsed.supplier === 'DigiKey') {
+    var d = pick(['10K', '1K', '11K', 'K', '1T', '9D']), pn = normPn(parsed.supplierPn || parsed.mpn);
+    return (d[0] || d[1] || d[2]) && pn ? 'D|' + pn + '|' + d.join('|') + '|' + q : '';
+  }
+  return '';
+}

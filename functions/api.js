@@ -5,8 +5,9 @@
 // Bindings (Pages project settings): D1 database as DB; secrets TOKEN (same as the Script property) and EXEC_URL (the /exec URL), PASSWORD (optional),
 // and for the direct lookup DIGIKEY_CLIENT_ID, DIGIKEY_CLIENT_SECRET, MOUSER_KEY.
 // ponytail: records never refresh here; a stock-check feature can overwrite rows when it lands.
-import { mergeLabels_, partKeys_, normPn, noPartWarning_ } from '../lib/shared.js';
+import { mergeLabels_, partKeys_, normPn, noPartWarning_, fingerprint_ } from '../lib/shared.js';
 import { haveKeys, lookupPart } from '../lib/lookup.js';
+import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp } from '../lib/inv.js';
 
 const reply = (body, status) => new Response(JSON.stringify(body), { status: status || 200, headers: { 'content-type': 'application/json' } });
 
@@ -33,25 +34,54 @@ export async function onRequestPost({ request, env, waitUntil }) {
   const req = body.req || {};
   body = { token: env.TOKEN, req };
   if (req.action === 'usage') return reply({ ok: true, data: await usage(env) });
+  if (String(req.action).startsWith('inv_')) return reply(await inventory(env, req));
   if (req.action !== 'scan') return reply(await forward(env, body));
 
+  // A scan: first the packet itself (a label already in stock is recognised without any lookup), then the part (D1 cache, then the suppliers).
   const texts = [].concat(req.texts || req.text || []).map(String).slice(0, 40), parsed = mergeLabels_(texts, req.supplier);
-  if (!parsed.mpn && !parsed.supplierPn) return reply({ ok: true, data: { parsed, rec: null, warnings: [noPartWarning_(parsed)] } });
+  await ensureSchema(env);
+  const fp = fingerprint_(parsed), dup = await findByFp(env, fp);
+  if (dup) return reply({ ok: true, data: { parsed, fp, dup, rec: null, source: 'inventory', warnings: [] } });
+  const done = async data => reply({ ok: true, data: Object.assign({ parsed, fp: fp || null, comp: data.rec ? await findComp(env, data.rec) : null }, data) });
+  if (!parsed.mpn && !parsed.supplierPn) return done({ rec: null, warnings: [noPartWarning_(parsed)] });
   const keys = partKeys_(parsed).keys.slice(0, 20);
   const hit = await cached(env, keys);
-  if (hit && hit.rec) return reply({ ok: true, data: { parsed, rec: hit.rec, source: 'cloud cache', warnings: [] } });
-  if (hit) return reply({ ok: true, data: { parsed, rec: null, source: 'cloud cache', warnings: ['Looked up a moment ago and not found at DigiKey or Mouser, so no new request was made. Check the part number, or try again later.'] } });
+  if (hit && hit.rec) return done({ rec: hit.rec, source: 'cloud cache', warnings: [] });
+  if (hit) return done({ rec: null, source: 'cloud cache', warnings: ['Looked up a moment ago and not found at DigiKey or Mouser, so no new request was made. Check the part number, or try again later.'] });
 
   if (!haveKeys(env)) {   // no supplier secrets here: Apps Script looks it up
     const out = await forward(env, body);
     if (out.ok && out.data && out.data.rec) store(env, waitUntil, out.data.rec, keys);
-    return reply(out);
+    return out.ok && out.data ? done(out.data) : reply(out);
   }
   const found = await lookupPart(env, parsed);
   countCalls(env, waitUntil, found.calls);
   if (found.rec) store(env, waitUntil, found.rec, keys);
   else if (found.clean) miss(env, waitUntil, keys);   // remember a clean "not found" so rescanning the same packet costs no API call
-  return reply({ ok: true, data: { parsed, rec: found.rec, source: found.source, warnings: found.warnings } });
+  return done({ rec: found.rec, source: found.source, warnings: found.warnings });
+}
+
+// Inventory actions (D1 is the source of truth). Errors meant for the person are thrown as Refuse and answered as {ok:false, error}.
+async function inventory(env, req) {
+  try {
+    await ensureSchema(env);
+    const who = { who: req.who };
+    switch (req.action) {
+      case 'inv_load': return { ok: true, data: await loadAll(env) };
+      case 'inv_add': return { ok: true, data: await addPacket(env, req) };
+      case 'inv_txn': return { ok: true, data: await packetTxn(env, req) };
+      case 'inv_edit': return { ok: true, data: await editComp(env, req) };
+      case 'inv_audit': return { ok: true, data: await audit(env, req) };
+      case 'inv_box': return { ok: true, data: await addBox(env, req.name) };
+      case 'inv_cat': return { ok: true, data: await addCategory(env, req) };
+      case 'inv_hist': return { ok: true, data: await history(env, req.comp) };
+      default: return { ok: false, error: 'unknown action' };
+    }
+  } catch (e) {
+    if (e instanceof Refuse) return { ok: false, error: e.message };
+    console.error(e);
+    return { ok: false, error: 'Server error' };
+  }
 }
 
 // D1 part cache. The table is created on first use (the first read fails once on a fresh database), not on every cold isolate.
