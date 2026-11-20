@@ -174,3 +174,36 @@ function mouserRead_(wasm, img, fast, getFull) {   // getFull() optional: the fr
     });
   });
 }
+
+/** Cheap clean-up for a frame that will not read (a dirty or speckled label, a dull or tinted one). Linear in the pixels, no per-pixel branching: about 10 ms
+ *  for a 1280 px video frame on a desktop. It is only tried after a plain read found nothing (live video spreads the variants over later frames), so a label that
+ *  reads fine never pays for it. mode 'auto': the channel that separates ink from paper best, stretched between the 2nd and 98th percentile. mode 'clean':
+ *  'auto' plus a [1 2 1] smoothing in both directions, which wipes specks and small dirt (on a speckled real label the plain read fails and this one reads;
+ *  contrast, tint, dimness and shadow the decoder already copes with). img = {width, height, data RGBA}; returns a new grey image of the same shape
+ *  (the input itself when the frame is flat). */
+function enhance_(img, mode) {
+  var w = img.width, h = img.height, d = img.data, n = w * h, step = Math.max(1, Math.floor(n / 16000)), i, c, o, m = 0, s = [0, 0, 0], q = [0, 0, 0];
+  for (i = 0; i < n; i += step) { o = i * 4; for (c = 0; c < 3; c++) { s[c] += d[o + c]; q[c] += d[o + c] * d[o + c]; } m++; }
+  var sd = [0, 1, 2].map(function (k) { var mean = s[k] / m; return q[k] / m - mean * mean; }), ch = 1;
+  if (sd[0] > sd[ch] * 1.15) ch = 0;
+  if (sd[2] > sd[ch] * 1.15) ch = 2;   // green unless another channel clearly shows more contrast (a tinted label hides the ink in some channels)
+  var hist = new Int32Array(256), g = new Uint8ClampedArray(n);
+  for (i = 0; i < n; i++) g[i] = d[i * 4 + ch];
+  for (i = 0; i < n; i += step) hist[g[i]]++;
+  var lo = 0, hi = 255, acc = 0, lowCut = m * 0.02, highCut = m * 0.98;
+  for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= lowCut) { lo = i; break; } }
+  acc = 0;
+  for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= highCut) { hi = i; break; } }
+  if (hi - lo < 12) return img;   // flat frame: nothing to stretch
+  var lut = new Uint8ClampedArray(256);
+  for (i = 0; i < 256; i++) lut[i] = (i - lo) * 255 / (hi - lo);
+  for (i = 0; i < n; i++) g[i] = lut[g[i]];
+  if (mode === 'clean') {
+    var t = new Uint16Array(n), x, y, l, r, u, dn;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { i = y * w + x; l = x > 0 ? i - 1 : i; r = x < w - 1 ? i + 1 : i; t[i] = g[l] + 2 * g[i] + g[r]; }
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { i = y * w + x; u = y > 0 ? i - w : i; dn = y < h - 1 ? i + w : i; g[i] = (t[u] + 2 * t[i] + t[dn]) >> 4; }
+  }
+  var out = new Uint8ClampedArray(n * 4);
+  for (i = 0, o = 0; i < n; i++, o += 4) { out[o] = out[o + 1] = out[o + 2] = g[i]; out[o + 3] = 255; }
+  return { width: w, height: h, data: out };
+}

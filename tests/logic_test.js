@@ -177,6 +177,22 @@ t('Mouser ProductAttributes (case code, values) feed the parser', () => {
     ProductAttributes: [{ AttributeName: 'Packaging', AttributeValue: 'Reel' }, { AttributeName: 'Case Code - in', AttributeValue: '0402' }, { AttributeName: 'Capacitance', AttributeValue: '100 nF' }, { AttributeName: 'Voltage Rating DC', AttributeValue: '50 VDC' }] });
   assert.strictEqual(r.groupKey, 'C|100nF|0402'); assert.strictEqual(r.sp.volt, '50V');
 });
+t('scan filters: stretch finds the ink channel, smoothing wipes specks, a flat frame is left alone, cost stays small', () => {
+  const mkImg = (w, h, px) => { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) d.set(px(i % w, (i / w) | 0), i * 4); return { width: w, height: h, data: d }; };
+  const cell = (x, y) => (((x >> 4) + (y >> 4)) % 2);
+  const dull = mkImg(128, 96, (x, y) => { const v = cell(x, y) ? 100 : 140; return [v, v, v, 255]; }), a = S.enhance_(dull, 'auto');
+  assert.strictEqual(a.data[1], 255, 'light cells go to white'); assert.strictEqual(a.data[(16 * 128) * 4 + 1] === 0 || a.data[16 * 4 + 1] === 0, true, 'dark cells go to black');
+  const tint = mkImg(128, 96, (x, y) => [200, cell(x, y) ? 90 : 100, cell(x, y) ? 40 : 200, 255]);   // only blue carries the pattern
+  const b = S.enhance_(tint, 'auto'); assert.ok(b.data[1] !== b.data[16 * 4 + 1], 'the contrast-rich channel is used, not green');
+  const flat = mkImg(64, 64, () => [120, 120, 120, 255]); assert.strictEqual(S.enhance_(flat, 'clean'), flat, 'a flat frame is returned as it is');
+  const speck = mkImg(128, 96, (x, y) => { const v = cell(x, y) ? 40 : 220; return (x * 7 + y * 13) % 29 === 0 ? [128, 128, 128, 255] : [v, v, v, 255]; });
+  const raw = S.enhance_(speck, 'auto'), cl = S.enhance_(speck, 'clean'), dev = im => { let e = 0; for (let y = 2; y < 94; y++) for (let x = 2; x < 126; x++) { if (((x % 16) < 3 || (x % 16) > 12 || (y % 16) < 3 || (y % 16) > 12)) continue; const want = cell(x, y) ? 0 : 255; e += Math.pow(im.data[(y * 128 + x) * 4] - want, 2); } return e; };
+  assert.ok(dev(cl) < dev(raw) * 0.5, 'smoothing removes most of the speck error inside the cells: ' + dev(raw) + ' -> ' + dev(cl));
+  // time it at native speed (the Node vm runs the same code about 10x slower): a 1280x960 frame stays far below one video frame period
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'Decode.js'), 'utf8'), native = new Function(src.slice(src.indexOf('function enhance_')) + ';return enhance_;')();
+  const big = mkImg(1280, 960, (x, y) => { const v = cell(x, y) ? 100 : 140; return [v, v, v, 255]; }); native(big, 'clean');
+  for (const m of ['auto', 'clean']) { const t0 = process.hrtime.bigint(); native(big, m); const ms = Number(process.hrtime.bigint() - t0) / 1e6; assert.ok(ms < 150, m + ' took ' + ms + ' ms'); }
+});
 t('unknown category falls to Misc', () => assert.strictEqual(S.categoryFor_('Connectors > Headers'), 'Misc'));
 
 // ---- inventory

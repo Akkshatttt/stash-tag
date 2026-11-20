@@ -86,11 +86,18 @@
   .modal { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); align-items: flex-end; }
   .sheet { background: #fff; width: 100%; border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
   .tabbar button:disabled { opacity: .4; }
+  .alert { border-radius: 12px; padding: 12px 14px; margin: 0 0 10px; border: 2px solid; }
+  .alert .at { font-size: 19px; font-weight: 800; letter-spacing: .3px; }
+  .alert .al { font-size: 16px; font-weight: 600; margin-top: 3px; }
+  .alert.bad { background: #fdebec; border-color: var(--bad); color: #a30010; }
+  .alert.good { background: #e8f6ec; border-color: var(--good); color: #176a2b; }
+  .msg { font-size: 17px; border: 2px solid transparent; }
+  .msg.good { border-color: var(--good); } .msg.bad { border-color: var(--bad); }
   .row2 button.pill { min-height: 44px; padding: 0 20px; font-weight: 600; }
 </style>
 </head>
 <body>
-<div class="tabbar"><button id="t1"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>Scan</button><button id="t2"><svg viewBox="0 0 24 24"><path d="M7 7h12M16 4l3 3-3 3M17 17H5M8 14l-3 3 3 3"/></svg>Transact</button><button id="t3"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button><button id="t4"><svg viewBox="0 0 24 24"><path d="M9 4h6v3H9zM7 5H5v16h14V5h-2M9 14l2 2 4-4"/></svg>Count</button></div>
+<div class="tabbar"><button id="t1"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>Scan</button><button id="t2"><svg viewBox="0 0 24 24"><path d="M7 7h12M16 4l3 3-3 3M17 17H5M8 14l-3 3 3 3"/></svg>Transact</button><button id="t3"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div>
 <div id="live" class="live"></div>
 <div id="msg" class="msg" style="display:none"></div>
 <div id="modal" class="modal"></div>
@@ -109,7 +116,7 @@ TOKEN = TOKEN || store('token') || '';
 var PASS = store('pass') || '';
 var st = { scan: null, tx: null, msg: '', kind: 'good', pend: '', inv: null, rows: [], open: {}, redraw: null };   // last server answers; rows = one search row per group
 var ui = { dbg: store('debug') === true, who: store('who') || '', text: '', qty: '', box: '', newBox: '', cat: 0, descr: '', descrEdited: false, fix: {}, from: [], query: '', sort: '', dir: 'asc', top: 0, sub: 0, stock: false, countBox: '-', counts: {} };   // what the user typed; typing never redraws (keeps the phone keyboard open)
-var cats = {}, boxes = {};
+var cats = {}, boxes = {}, PAGE = 25;   // Search shows PAGE groups at a time
 var UNSORTED = 1400;
 function signedIn() { return !!(TOKEN || PASS); }
 function signOut(msg) {   // wrong or changed password: forget everything this browser kept, show the sign-in card
@@ -203,7 +210,7 @@ function B(text, cls, fn) {
   return b;
 }
 function lock(on, btn, label) {
-  busy = on; reg.forEach(function (b) { b.disabled = on || !!(b.need && b.need()); }); [t1, t2, t3, t4].forEach(function (t) { if (t) t.disabled = on; });
+  busy = on; reg.forEach(function (b) { b.disabled = on || !!(b.need && b.need()); }); [t1, t2, t3].forEach(function (t) { if (t) t.disabled = on; });
   if (btn) { if (on) { btn._t = btn.textContent; btn.textContent = label || 'Saving...'; } else if (btn._t) { btn.textContent = btn._t; btn._t = ''; } }
 }
 function paintBanner() {
@@ -242,6 +249,9 @@ function field(label, input, o) {   // label above, control below; o: {req: true
   f.setBad = function (msg) { f.className = 'field' + (o.soft ? ' soft' : '') + (msg ? ' bad' : ''); f.children[f.children.length - 1].textContent = msg || ''; };
   return f;
 }
+function alert_(kind, title, lines) {   // a block that cannot be missed: red = stop and look, green = all good
+  return el('div', { className: 'alert ' + kind }, [el('div', { className: 'at', text: (kind === 'bad' ? '\u26a0 ' : '\u2713 ') + title })].concat((lines || []).filter(Boolean).map(function (t) { return el('div', { className: 'al', text: t }); })));
+}
 function input(key, props, store_) {   // a text box bound to ui[key] (or store_ object)
   var o = store_ || ui, i = el('input', Object.assign({ value: o[key] == null ? '' : o[key] }, props || {}));
   i.addEventListener('input', function () { o[key] = i.value; if (i.onchange_) i.onchange_(); });
@@ -257,8 +267,9 @@ function toImageData(src, w, h, maxSide) {   // photo or video frame -> RGBA, ke
   var g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(src, 0, 0, c.width, c.height);
   return g.getImageData(0, 0, c.width, c.height);
 }
-function decodeImageData(id, fast, done, getFull) {   // getFull() = the frame at full size, only asked for when 1D bars must be read   // done(array of every barcode text found)
+function decodeImageData(id, fast, done, getFull, variant) {   // getFull() = the frame at full size, only asked for when 1D bars must be read; variant: 'raw' (default), 'clean' or 'auto' clean-up (enhance_)   // done(array of every barcode text found)
   var texts = function (rs) { return rs.map(function (r) { return r.text; }); };
+  if (variant && variant !== 'raw') { id = enhance_(id, variant); if (getFull) { var gf = getFull; getFull = function () { return enhance_(gf(), variant); }; } }
   var js = function () {
     try { var d = makeDecoder_(ZXing); done(texts(d.decodeAll(d.gray(id.data, id.width, id.height), { fast: fast, budgetMs: fast ? 600 : 4000 }))); } catch (e) { done([]); }
   };
@@ -266,20 +277,29 @@ function decodeImageData(id, fast, done, getFull) {   // getFull() = the frame a
   // One reader for every label: the 2D code first (DigiKey's holds everything, so that is all it reads); only a label whose 2D code has no part
   // number (Mouser) goes on to the 1D bars (mouserRead_, Decode.js). The page never has to be told which supplier it is looking at.
   var read = mouserRead_(ZXingWASM, id, fast, getFull);
-  read.then(function (rs) { st.dbg = rs.dbg || { w: id.width, h: id.height }; if (rs.length || fast) done(texts(rs)); else js(); },
+  read.then(function (rs) { st.dbg = rs.dbg || { w: id.width, h: id.height }; st.dbg.filter = variant || 'raw'; if (rs.length || fast) done(texts(rs)); else js(); },
     function (e) { wasmFailed = true; st.wasmError = String(e && e.message || e); js(); });
+}
+function readPhoto(id, done) {   // a plain read first; only when it finds nothing, the cheap clean-ups: smoothing (specks, dirt), then contrast stretch on the best channel
+  decodeImageData(id, false, function (t) {
+    if (t.length) return done(t);
+    decodeImageData(id, false, function (t2) {
+      if (t2.length) return done(t2);
+      decodeImageData(id, false, done, null, 'auto');
+    }, null, 'clean');
+  });
 }
 function decodeFile(file, done) {   // the camera app's full-resolution photo, turned upright by its EXIF tag, up to 4096 px on the long side
   var viaImg = function () {
     var url = URL.createObjectURL(file), img = new Image();
-    img.onload = function () { var id = toImageData(img, img.width, img.height, 4096); URL.revokeObjectURL(url); decodeImageData(id, false, done); };
+    img.onload = function () { var id = toImageData(img, img.width, img.height, 4096); URL.revokeObjectURL(url); readPhoto(id, done); };
     img.onerror = function () { done([]); };
     img.src = url;
   };
   if (typeof createImageBitmap !== 'function') return viaImg();
   createImageBitmap(file, { imageOrientation: 'from-image' }).then(function (bm) {
     var id = toImageData(bm, bm.width, bm.height, 4096); if (bm.close) bm.close();
-    decodeImageData(id, false, done);
+    readPhoto(id, done);
   }, viaImg);
 }
 // Load the wasm decoder now (compiles once, and tells at once if it cannot load in this page) instead of on the first scan.
@@ -293,6 +313,7 @@ function dbgText() {   // one line for "Show debug info": what the decoder did o
   if (d.c128 !== undefined) b.push(d.c128 + ' 1D read');
   if (d.strips) b.push(d.strips + ' strips');
   if (d.pn) b.push('P/N ' + d.pn);
+  if (d.filter && d.filter !== 'raw') b.push('filter ' + d.filter);
   if (d.ms !== undefined) b.push(d.ms + ' ms');
   return b.join(' | ');
 }
@@ -341,7 +362,7 @@ function startLive() {
     var close = el('button', { className: 'sec', text: 'Close' }); close.addEventListener('click', function () { stopLive(); render(); });
     var box = liveBox(); box.innerHTML = ''; box.style.display = 'block';
     [el('div', { className: 'title', text: 'Live scan' }), video, el('div', { className: 'group' }, [el('div', { className: 'pad' }, [status, dbgEl])]), popup, close].forEach(function (c) { box.appendChild(c); });
-    live = { from: tab, stream: stream, video: video, status: status, dbgEl: dbgEl, popup: popup, seen: {}, asked: {}, firstAt: 0, asking: false, paused: false, stop: false };
+    live = { from: tab, stream: stream, video: video, status: status, dbgEl: dbgEl, popup: popup, seen: {}, asked: {}, fails: 0, firstAt: 0, asking: false, paused: false, stop: false };
     if (video.play) video.play();
     liveTick();
   }, function (e) { flash('Error: live camera blocked (' + (e && e.name) + ': ' + (e && e.message) + '). Use the photo button.', 'bad'); render(); });
@@ -353,8 +374,12 @@ function liveTick() {
   var v = l.video, next = function () { setTimeout(liveTick, 160); };
   if (l.paused || l.asking || !v.videoWidth) return next();
   // The 2D code is looked for in a 1280 px copy (fast); the full-size frame (up to 4K, so thin 1D bars keep their modules) is made only if bars must be read.
+  // Plain frames while they read. After two empty frames the clean-ups come in on later frames (smoothing, plain, stretch, plain ...), so a label that reads
+  // fine never pays for them and a dull, dim or dirty one gets a different look every few frames.
+  var variant = l.fails < 2 ? 'raw' : ['clean', 'raw', 'auto', 'raw'][(l.fails - 2) % 4];
   decodeImageData(toImageData(v, v.videoWidth, v.videoHeight, 1280), true, function (texts) {
     if (l.stop || l.paused) return;
+    l.fails = texts.length ? 0 : l.fails + 1;
     var once = {};
     texts.forEach(function (t) { if (!once[t]) { once[t] = 1; l.seen[t] = (l.seen[t] || 0) + 1; } });   // frames each text was read in
     if (ui.dbg) l.dbgEl.textContent = dbgText();
@@ -368,7 +393,7 @@ function liveTick() {
     var pick = every.length && now - l.firstAt > 6000 ? pickList(every) : [];
     if (pick.length) return livePick(pick, next);
     next();
-  }, function () { return toImageData(v, v.videoWidth, v.videoHeight, 3840); });
+  }, function () { return toImageData(v, v.videoWidth, v.videoHeight, 3840); }, variant);
 }
 function livePick(pick, next) {   // no part number after a few seconds: let the user tap the bar that is the part number
   var l = live;
@@ -489,7 +514,7 @@ function liveAsk(texts, next) {
     if (r.dup) {
       var c = compOf(r.dup), pk = packetOf(r.dup);
       l.paused = true; l.status.textContent = 'This packet is in stock.'; l.popup.innerHTML = '';
-      l.popup.appendChild(el('div', { className: 'card' }, [el('div', { className: 'big', text: c ? c.mpn : 'Packet ' + r.dup.packetId }), el('div', { text: c ? c.descr : '' }),
+      l.popup.appendChild(el('div', { className: 'card' }, [alert_('bad', 'PART ALREADY IN STOCK', []), el('div', { className: 'big', text: c ? c.mpn : 'Packet ' + r.dup.packetId }), el('div', { text: c ? c.descr : '' }),
         el('div', { className: r.dup.st ? 'small warn' : 'small', text: r.dup.st === 1 ? 'This packet was used up (0 left).' : r.dup.st === 2 ? 'This packet was removed.' : 'In stock: ' + packetLine(pk) }),
         el('div', { className: 'big', text: 'Change something?' }),
         r.dup.st === 2 ? null : yes('Yes, change it', function () { stopLive(); st.tx = r; st.scan = null; tab = 'tx'; flash('', 'good'); render(); }), no('No, keep scanning')]));
@@ -502,7 +527,7 @@ function liveAsk(texts, next) {
     l.paused = true; l.status.textContent = from === 'tx' ? 'This packet is not in stock.' : 'Part detected.';
     var use = from === 'tx' ? yes('Add it in the Scan tab', function () { stopLive(); applyScan(r); tab = 'scan'; flash('', 'good'); render(); }) : yes('Use this part', function () { stopLive(); ui.text = ''; applyScan(r); flash('', 'good'); render(); });
     l.popup.innerHTML = '';
-    l.popup.appendChild(el('div', { className: 'card' }, [el('div', { className: 'big', text: r.rec.mpn }),
+    l.popup.appendChild(el('div', { className: 'card' }, [from === 'tx' ? alert_('bad', 'NOT IN STOCK', []) : alert_('good', 'PART DETECTED', []), el('div', { className: 'big', text: r.rec.mpn }),
       r.parsed && r.parsed.loose ? el('div', { className: 'small warn', text: 'Unverified: guessed from a bar on the label. Check it against the packet.' }) : null,
       el('div', { className: 'small', text: [r.rec.manufacturer, r.rec.supplier, r.rec.dkPn || r.rec.mouserPn].filter(Boolean).join(' · ') }),
       el('div', { text: r.rec.description }), r.parsed && r.parsed.qty ? el('div', { className: 'small', text: 'Quantity on label: ' + r.parsed.qty }) : null, use, no(from === 'tx' ? 'Keep scanning' : 'Not this one')]));
@@ -540,8 +565,8 @@ function pickView(from) {
 }
 function notFound(s) {
   var p = s.parsed || {}, shown = String(p.raw || '').replace(/\x1d/g, '<GS>').replace(/\x1e/g, '<RS>').replace(/\x04/g, '<EOT>');
-  return el('div', { className: 'card' }, [el('div', { className: 'bad big', text: 'Part not found' })].concat((s.warnings || []).map(function (w) { return el('div', { className: 'sub', text: w }); }),
-    [el('div', { className: 'small', text: 'Decoded: ' + shown }), el('div', { className: 'small', text: 'Fields: ' + JSON.stringify(p.fields || {}) + ' | searched: ' + (p.supplierPn || p.mpn || '(none)') })]));
+  return el('div', {}, [alert_('bad', 'PART NOT FOUND', s.warnings || []), el('div', { className: 'card' }, [el('div', { className: 'small', text: 'Decoded: ' + shown }),
+    el('div', { className: 'small', text: 'Fields: ' + JSON.stringify(p.fields || {}) + ' | searched: ' + (p.supplierPn || p.mpn || '(none)') })])]);
 }
 function partCard(r, s) {
   return [el('div', { className: 'big', text: r.mpn }), s.parsed && s.parsed.loose ? el('div', { className: 'small warn', text: 'Unverified: guessed from a bar on the label. Check it against the packet.' }) : null,
@@ -549,18 +574,18 @@ function partCard(r, s) {
 }
 
 // ---- Scan tab: add a new packet
-function dupCard(s) {   // this packet is already in stock: say so, then ask whether to change something
+function dupCard(s) {   // this packet is already in stock: say so loudly, then ask whether to change something
   var d = s.dup, c = compOf(d), pk = packetOf(d);
-  return el('div', { className: 'group' }, [el('div', { className: 'pad' }, [el('div', { className: 'warn big', text: 'Already in stock' }), el('div', { className: 'big', text: c ? c.mpn : 'Packet ' + d.packetId }), el('div', { text: c ? c.descr : '' }),
-    el('div', { className: d.st ? 'warn' : '', text: d.st === 1 ? 'This packet was used up (0 left).' : d.st === 2 ? 'This packet was removed. Ask an admin before adding it again.' : 'This packet: ' + packetLine(pk) }),
-    el('div', { className: 'big', text: 'Do you want to change something?' }),
-    d.st === 2 ? null : B('Yes, open it in Transact', 'primary', function () { st.tx = s; st.scan = null; tab = 'tx'; render(); }), B('No, scan another', 'sec', function () { st.scan = null; render(); })])]);
+  return el('div', {}, [alert_('bad', 'PART ALREADY IN STOCK', [c ? c.mpn + (c.descr ? ' · ' + c.descr : '') : 'Packet ' + d.packetId,
+      d.st === 1 ? 'This packet was used up (0 left).' : d.st === 2 ? 'This packet was removed. Ask an admin before adding it again.' : 'This packet: ' + packetLine(pk)]),
+    el('div', { className: 'group' }, [el('div', { className: 'pad' }, [el('div', { className: 'big', text: 'Do you want to change something?' }),
+      d.st === 2 ? null : B('Yes, open it in Transact', 'primary', function () { st.tx = s; st.scan = null; tab = 'tx'; render(); }), B('No, scan another', 'sec', function () { st.scan = null; render(); })])])]);
 }
 function addForm(s) {
   var r = s.rec, ex = s.comp && s.comp.group.comps[0], pick = catPick(ui.cat), kind = ex ? '' : kindOf(pick.get() || ui.cat), root = el('div', {});
   var tot = ex ? ex.packets.reduce(function (a, x) { return a + x.qty; }, 0) : 0;
-  root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(r, s).concat([el('div', { className: 'small', text: ['Group: ' + (r.groupKey || ''), r.spec].filter(Boolean).join(' · ') }),
-    ex ? el('div', { className: 'warn', text: 'Already in stock: ' + tot + ' pcs in ' + ex.packets.length + ' packet(s). This adds one more packet.' }) : el('div', { className: 'good', text: s.fp ? 'New part' : 'New part (no order data on the label: it cannot be recognised again)' })]))]));
+  root.appendChild(ex ? alert_('bad', 'PART ALREADY IN STOCK', [tot + ' pcs in ' + ex.packets.length + ' packet(s). This adds one more packet.']) : alert_('good', 'NEW PART', [s.fp ? '' : 'No order data on the label: this packet cannot be recognised again.']));
+  root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(r, s).concat([el('div', { className: 'small', text: ['Group: ' + (r.groupKey || ''), r.spec].filter(Boolean).join(' · ') })]))]));
   var qty = input('qty', { type: 'number', inputMode: 'numeric', placeholder: 'how many' }), fq = field('Quantity', qty, { req: true });
   var bx = boxSelect(ui.box), nb = input('newBox', { placeholder: 'or type a new box name' }), fb = field('Box', el('div', { className: 'stack' }, [bx, nb]), { req: true });
   bx.addEventListener('change', function () { ui.box = bx.value; refresh(); });
@@ -585,7 +610,7 @@ function addForm(s) {
   qty.onchange_ = refresh; nb.onchange_ = refresh;
   pick.nodes.forEach(function (n) { n.addEventListener('change', function () { ui.cat = pick.get(); if (kindOf(ui.cat) !== kind) render(); else refresh(); }); });
   root.appendChild(el('div', { className: 'form' }, [fq, fb].concat(ex ? [] : [fc, fd].concat(pf ? pf.nodes : []))));
-  (s.warnings || []).forEach(function (w) { root.appendChild(el('div', { className: 'foot warn', text: w })); });
+  (s.warnings || []).forEach(function (w) { root.appendChild(alert_('bad', 'WARNING', [w])); });
   var send = function (b) {
     var body = { action: 'inv_add', rec: r, fp: s.fp, qty: ui.qty, box: ui.box, lot: s.parsed && s.parsed.lot || '', dc: s.parsed && s.parsed.dateCode || '' };
     if (!ex) { body.cat = pick.get() !== s.cat ? pick.get() : 0; if (ui.descrEdited) body.descr = ui.descr; if (kind) body.fix = ui.fix; }
@@ -637,14 +662,14 @@ function txView() {
   var root = el('div', {}), t = st.tx, pv = pickView('tx');
   if (pv) root.appendChild(pv);
   if (t && t.dup) {
-    var d = t.dup, c = compOf(d), pk = packetOf(d);
-    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, [el('div', { className: 'big', text: c ? c.mpn : 'Packet ' + d.packetId }), el('div', { text: c ? c.descr : '' }),
-      el('div', { className: d.st ? 'warn' : 'sub', text: d.st === 1 ? 'This packet was used up (0 left). Add stock to bring it back.' : d.st === 2 ? 'This packet was removed. Ask an admin.' : 'This packet: ' + packetLine(pk) }),
-      c && c.by ? el('div', { className: 'small', text: 'Last change: ' + c.by + ' ' + fmtDate(c.ts) }) : null,
+    var d = t.dup, c = compOf(d), pk = packetOf(d), gone = d.st === 2 || d.st === 1;
+    root.appendChild(alert_(gone ? 'bad' : 'good', d.st === 1 ? 'PACKET USED UP' : d.st === 2 ? 'PACKET REMOVED' : 'PACKET FOUND', [c ? c.mpn + (c.descr ? ' · ' + c.descr : '') : 'Packet ' + d.packetId,
+      d.st === 1 ? 'Nothing left in it. Add stock to bring it back.' : d.st === 2 ? 'Ask an admin.' : 'This packet: ' + packetLine(pk)]));
+    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, [c && c.by ? el('div', { className: 'small', text: 'Last change: ' + c.by + ' ' + fmtDate(c.ts) }) : null,
       d.st === 2 ? null : txnBox(pk, function (msg) { st.tx = null; flash(msg, 'good'); })])]));
   } else if (t && t.rec) {
-    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(t.rec, t).concat([el('div', { className: 'bad big', text: 'This packet is not in stock yet' }),
-      el('div', { className: 'sub', text: 'Nothing to take or change. Add it as a new packet first.' }), B('Add it in the Scan tab', 'primary', function () { applyScan(t); tab = 'scan'; render(); })]))]));
+    root.appendChild(alert_('bad', 'THIS PACKET IS NOT IN STOCK', ['Nothing to take or change. Add it as a new packet first.']));
+    root.appendChild(el('div', { className: 'group' }, [el('div', { className: 'pad' }, partCard(t.rec, t).concat([B('Add it in the Scan tab', 'primary', function () { applyScan(t); tab = 'scan'; render(); })]))]));
   } else if (t) root.appendChild(notFound(t));
   else root.appendChild(el('div', { className: 'foot', text: 'Scan a packet that is already in stock to take parts out, add parts back, correct its count or move it to another box.' }));
   scanControls('tx', !!t).forEach(function (n) { root.appendChild(n); });
@@ -674,10 +699,13 @@ function searchView() {
       if (list.length) dyn.appendChild(el('div', { className: 'tiles' }, list.map(function (c) { return tile(c.name, counts[c.id], function () { if (ui.top) ui.sub = c.id; else ui.top = c.id; draw(); }); })));
     }
     var found = base.filter(function (r) { return (!ui.top || r.top === ui.top) && (!ui.sub || r.sub === ui.sub); });
-    var hits = sortRows_(found, ui.sort, ui.dir).slice(0, 100);
+    var sig = [ui.query, ui.stock, ui.top, ui.sub, ui.sort, ui.dir].join('|');
+    if (sig !== ui.sig) { ui.sig = sig; ui.limit = PAGE; }   // a new search or filter starts from the first page again
+    var all = sortRows_(found, ui.sort, ui.dir), hits = all.slice(0, ui.limit);
     dyn.appendChild(el('div', { className: 'bar' }, [el('div', { className: 'small', text: (found.length > hits.length ? hits.length + ' of ' + found.length : String(found.length)) + ' result(s)' }), sortSel, dirBtn]));
     if (!hits.length) dyn.appendChild(el('div', { className: 'foot', text: 'Nothing matched.' }));
     else dyn.appendChild(el('div', { className: 'group' }, hits.map(groupCard)));
+    if (all.length > hits.length) dyn.appendChild(B('Load more (' + (all.length - hits.length) + ' left)', 'sec', function () { ui.limit += PAGE; draw(); }));
     inDraw = false;
   };
   st.redraw = draw;
@@ -721,7 +749,7 @@ function compBlock(c, g) {
 }
 
 // ---- Count tab: cycle count of one box; differences are logged as corrections
-function countView() {
+function countView() {   // not reachable from the tab bar while the Count tab is hidden (set tab = 'count' to bring it back)
   var root = el('div', {});
   if (!st.inv) return el('div', { className: 'foot', text: 'Loading inventory...' });
   var sel = boxSelect(ui.countBox === '-' ? '' : ui.countBox, 'Choose a box...');
@@ -749,7 +777,7 @@ function countView() {
 
 function render() {
   reg = [];
-  [[t1, 'scan'], [t2, 'tx'], [t3, 'search'], [t4, 'count']].forEach(function (x) { x[0].className = tab === x[1] ? 'on' : ''; x[0].disabled = busy; });
+  [[t1, 'scan'], [t2, 'tx'], [t3, 'search']].forEach(function (x) { x[0].className = tab === x[1] ? 'on' : ''; x[0].disabled = busy; });
   var app = document.getElementById('app');
   app.innerHTML = '';
   paintBanner();
@@ -757,11 +785,11 @@ function render() {
   if (!signedIn()) return app.appendChild(loginView());
   app.appendChild({ scan: addView, tx: txView, search: searchView, count: countView }[tab]());
 }
-var t1 = document.getElementById('t1'), t2 = document.getElementById('t2'), t3 = document.getElementById('t3'), t4 = document.getElementById('t4');
+var t1 = document.getElementById('t1'), t2 = document.getElementById('t2'), t3 = document.getElementById('t3');
 if (signedIn() && store('inv2')) setInv(store('inv2'));
 loadInv();
 if (ui.dbg) loadUsage();
-[[t1, 'scan'], [t2, 'tx'], [t3, 'search'], [t4, 'count']].forEach(function (x) { x[0].onclick = function () { if (busy) return; tab = x[1]; render(); }; });
+[[t1, 'scan'], [t2, 'tx'], [t3, 'search']].forEach(function (x) { x[0].onclick = function () { if (busy) return; tab = x[1]; render(); }; });
 render();
 </script>
 </body>

@@ -2,6 +2,12 @@
 
 Semantic versioning, staying 0.x until the planned feature set exists. Minor = new feature, patch = fix.
 
+## 0.9.2 (fixes after the second phone test)
+- **Changed:** important states are now big red or green blocks, not lines of text: PART ALREADY IN STOCK (Scan tab, add form and live scan), PACKET FOUND / USED UP / REMOVED and THIS PACKET IS NOT IN STOCK (Transact), PART NOT FOUND, NEW PART, WARNING; the result banner is larger with a coloured border.
+- **New:** Search shows 25 groups at a time with "Load more (N left)"; a new search or filter starts from the first page; loading more makes no server call.
+- **Changed:** the Count tab is hidden from the tab bar until it is reworked (page code, server action and its tests stay).
+- **New (scan filters):** `enhance_` in `src/Decode.js`, linear and about 10 ms for a 1280 px frame on a desktop. 'clean' = best-contrast channel + percentile stretch + [1 2 1] smoothing (wipes speckle and dirt: on a real DigiKey label with 1% speckle the plain read fails and this reads); 'auto' = stretch only. Plain frames are used while they read; after two empty live frames the variants alternate with plain frames (clean, plain, auto, plain), so a good label never pays; a photo that fails is retried as clean, then auto. Debug info shows "filter clean/auto". Tried and dropped: a local (adaptive) threshold, which added cost and read nothing the decoder did not already read.
+
 ## 0.9.1 (fixes and small additions after the first phone test of 0.9.0)
 - **New:** Transact tab (Scan, Transact, Search, Count). A label already in stock is offered "Do you want to change something?"; in live scan the camera keeps running until you answer, Yes opens the packet in Transact, No resumes scanning. A label not in stock offers to add it in the Scan tab.
 - **Changed (feedback):** every request locks all buttons and tabs until the server answers (a second tap cannot repeat an action), the tapped button says what it is doing, and a banner shows the result (green clears itself, red stays). Each change carries a request id; the server refuses the same id twice.

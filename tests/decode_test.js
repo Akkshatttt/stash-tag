@@ -55,5 +55,13 @@ const MUST = {
       }
     }
   }
+  // A real DigiKey label with speckle noise (dirt, grain) over 1% of its pixels, read the way live video reads (fast, Data Matrix only): the plain frame is not
+  // required to fail (the decoder improves), but the smoothed variant the page falls back on must read it.
+  const spk = await Jimp.read(path.join(root, 'digikey/reddit_04e8.jpg')); spk.resize({ w: 1280 });
+  const SW = spk.bitmap.width, SH = spk.bitmap.height, sd = new Uint8ClampedArray(spk.bitmap.data); let seed = 7;
+  for (let i = 0; i < SW * SH; i++) { seed = (seed * 16807) % 2147483647; if (seed / 2147483647 < 0.01) { const v = 90 + (seed % 90); sd[i * 4] = sd[i * 4 + 1] = sd[i * 4 + 2] = v; } }
+  const sp = { width: SW, height: SH, data: sd }, plain = await S.decodeWasm_(wasm, sp, true, ['DataMatrix'], true), cleaned = await S.decodeWasm_(wasm, S.enhance_(sp, 'clean'), true, ['DataMatrix'], true);
+  console.log('speckled label: plain', plain.length ? 'read' : 'miss', '| clean', cleaned.length ? 'read' : 'miss');
+  assert.ok(cleaned.length, 'the smoothed variant reads a speckled label'); n++;
   console.log('decode ok (' + n + ' checked)');
 })().catch(e => { console.error(e); process.exit(1); });

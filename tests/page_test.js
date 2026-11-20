@@ -33,7 +33,7 @@ function openPage(answers) {
   const document = { createElement: t => {
     const e = new El(t);
     if (t === 'video') Object.assign(e, { videoWidth: 640, videoHeight: 480, play() {} });
-    if (t === 'canvas') e.getContext = () => ({ drawImage() {}, getImageData: (x, y, w, h) => ({ width: w, height: h, data: [] }) });
+    if (t === 'canvas') e.getContext = () => ({ drawImage() {}, getImageData: (x, y, w, h) => ({ width: w, height: h, data: answers.frame ? answers.frame(w, h) : [] }) });
     return e;
   }, getElementById: id => (byId[id] = byId[id] || new El('div')) };
   const ctx = vm.createContext(Object.assign({ document, ZXing: {}, URL, Image: function () {}, console, setTimeout, clearTimeout, Date,
@@ -87,9 +87,10 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   assert.strictEqual(JSON.parse(p.ls.token), 'abc'); assert.strictEqual(p.ctx.location.hash, '');
   await sleep(10); assert.strictEqual(p.fetched[0].token, 'abc');
 
-  // ---- four tabs
+  // ---- three tabs (the Count tab is hidden until it is reworked)
   p = openPage({ inv_load: mkInv() }); await sleep(10);
-  assert.ok(/Scan/.test(p.text())); p.byId.t2.click(); assert.ok(/Transact/.test(p.text()) && /already in stock/.test(p.text())); p.byId.t3.click(); assert.ok(/Search/.test(p.text())); p.byId.t4.click(); assert.ok(/Count/.test(p.text()));
+  assert.ok(/Scan/.test(p.text())); p.byId.t2.click(); assert.ok(/Transact/.test(p.text()) && /already in stock/.test(p.text())); p.byId.t3.click(); assert.ok(/Search/.test(p.text()));
+  assert.ok(!/id="t4"/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'AppPage.html'), 'utf8')), 'the Count tab is hidden from the tab bar');
 
   // ---- a new packet of a known part: the box must be chosen, then it is added
   p = openPage({ inv_load: mkInv(), scan: { parsed: { qty: 25, lot: 'L9', dateCode: '2501' }, fp: 'D|x', comp: oneComp(), rec, source: 'DigiKey', warnings: [], cat: 106, descr: 'RES 2.2K 1% 0402' },
@@ -97,7 +98,8 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   await sleep(10);
   type(inputs(p)[0], 'AC0402FR-072K2L'); btn(p, 'Look up')[0].click(); await sleep(10);
   assert.deepStrictEqual(p.calls.slice(0, 2).map(c => c.action), ['inv_load', 'scan']); assert.deepStrictEqual(p.calls[1].texts, ['AC0402FR-072K2L']);
-  assert.ok(/Already in stock: 75 pcs in 2 packet/.test(p.text()) && /AC0402FR-072K2L/.test(p.text()));
+  assert.ok(/PART ALREADY IN STOCK/.test(p.text()) && /75 pcs in 2 packet/.test(p.text()) && /AC0402FR-072K2L/.test(p.text()));
+  assert.ok(p.byId.app.find(e => /alert bad/.test(e.className) && /ALREADY IN STOCK/.test(e.textContent)).length, 'a red block, not a line of text');
   assert.ok(inputs(p).some(e => e.value === '25'), 'quantity prefilled from the label');
   const addBtn = () => btn(p, 'Add packet')[0];
   assert.ok(addBtn().disabled && /Still needed: box/.test(p.text()), 'no box, no add: ' + p.text());
@@ -115,7 +117,7 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
     inv_box: { id: 9, name: 'Z9' }, inv_add: oneGroup([comp(30, 'NEW1', [pk(7, 3, 9)], { cat: 601 })], { id: 5, key: 'P|new1', label: 'NEW1', cat: 601 }) });
   await sleep(10);
   type(inputs(p)[0], 'NEW1'); btn(p, 'Look up')[0].click(); await sleep(10);
-  assert.ok(/New part \(no order data/.test(p.text()) && inputs(p).some(e => e.value === 'Some regulator'), 'description is editable');
+  assert.ok(/NEW PART/.test(p.text()) && /No order data on the label/.test(p.text()) && p.byId.app.find(e => /alert good/.test(e.className)).length && inputs(p).some(e => e.value === 'Some regulator'), 'description is editable');
   assert.ok(btn(p, 'Add packet')[0].disabled, 'box still missing');
   type(inputs(p).find(e => e.value === 'Some regulator'), 'Linear regulator 3.3V'); type(inputWith(p, 'or type a new box name'), 'Z9');
   assert.ok(!btn(p, 'Add packet')[0].disabled, 'a new box name counts as a box: ' + p.ctx.ui.cat + ' ' + selects(p).map(x => x.value + '/' + x.children.map(o => o.selected).join(',')).join(' ; '));
@@ -158,8 +160,8 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   // ---- a packet already in stock (Scan tab): asks whether to change something, then opens Transact
   p = openPage({ inv_load: mkInv(), scan: dupAns, inv_txn: oneGroup([comp(10, 'AC0402FR-072K2L', [pk(100, 45, 1), pk(101, 25, 2)])]) });
   await sleep(10); type(inputs(p)[0], 'x'); btn(p, 'Look up')[0].click(); await sleep(10);
-  assert.ok(/Already in stock/.test(p.text()) && /Do you want to change something\?/.test(p.text()) && /This packet: 50 pcs · box B12/.test(p.text()), p.text());
-  btn(p, 'Yes, open it in Transact')[0].click(); assert.strictEqual(p.byId.t2.className, 'on'); assert.ok(/Transact/.test(p.text()) && btn(p, 'Take').length);
+  assert.ok(/PART ALREADY IN STOCK/.test(p.text()) && /Do you want to change something\?/.test(p.text()) && /This packet: 50 pcs · box B12/.test(p.text()), p.text());
+  btn(p, 'Yes, open it in Transact')[0].click(); assert.strictEqual(p.byId.t2.className, 'on'); assert.ok(/Transact/.test(p.text()) && /PACKET FOUND/.test(p.text()) && p.byId.app.find(e => /alert good/.test(e.className)).length && btn(p, 'Take').length);
   const takeB = btn(p, 'Take')[0]; takeB.click(); assert.ok(/Enter a whole number above 0/.test(p.text()) && !p.calls.some(c => c.action === 'inv_txn'), 'no quantity, no request');
   type(inputWith(p, 'e.g. 10'), '5'); takeB.click();
   assert.deepStrictEqual(strip(p.calls.at(-1)), { action: 'inv_txn', packet: 100, note: '', mode: 'take', qty: '5', who: 'Asha' });
@@ -184,12 +186,12 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   // the Transact tab with a label that is not in stock: no changes offered, a way to add it
   p = openPage({ inv_load: mkInv(), scan: { parsed: { qty: 5 }, fp: 'D|n', comp: null, rec, source: 'DigiKey', warnings: [], cat: 106, descr: 'd' } }); await sleep(10);
   p.byId.t2.click(); type(inputs(p)[0], 'x'); btn(p, 'Look up')[0].click(); await sleep(10);
-  assert.ok(/not in stock yet/.test(p.text()) && !btn(p, 'Take').length); btn(p, 'Add it in the Scan tab')[0].click(); assert.strictEqual(p.byId.t1.className, 'on'); assert.ok(btn(p, 'Add packet').length);
+  assert.ok(/THIS PACKET IS NOT IN STOCK/.test(p.text()) && p.byId.app.find(e => /alert bad/.test(e.className)).length && !btn(p, 'Take').length); btn(p, 'Add it in the Scan tab')[0].click(); assert.strictEqual(p.byId.t1.className, 'on'); assert.ok(btn(p, 'Add packet').length);
 
   // ---- not found
   p = openPage({ inv_load: mkInv(), scan: { parsed: { raw: '[)>\x1e06\x1d1PABC', fields: { '1P': 'ABC' }, mpn: 'ABC' }, rec: null, warnings: ['Mouser key missing'] } }); await sleep(10);
   type(inputs(p)[0], 'ZZZ'); btn(p, 'Look up')[0].click(); await sleep(10);
-  assert.ok(/Part not found/.test(p.text()) && /Mouser key missing/.test(p.text()) && /Decoded: \[\)><RS>06<GS>1PABC/.test(p.text()) && /searched: ABC/.test(p.text()));
+  assert.ok(/PART NOT FOUND/.test(p.text()) && /Mouser key missing/.test(p.text()) && /Decoded: \[\)><RS>06<GS>1PABC/.test(p.text()) && /searched: ABC/.test(p.text()));
 
   // ---- Search: filtered in the page (no server call), tiles drill down, chips remove, group opens into parts and packets
   p = openPage({ inv_load: mkInv(), inv_txn: oneComp(), inv_edit: oneGroup([comp(10, 'AC0402FR-072K2L', [pk(100, 50, 1), pk(101, 25, 2)], { descr: 'RES precise' })], { id: 9, key: 'R|4.7k|0402', label: 'Resistor 4.7k 0402' }) });
@@ -221,13 +223,22 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   const sel = p.byId.app.find(e => e.tag === 'select')[0]; sel.value = 'qty'; sel.fire('change'); assert.strictEqual(order()[0], 'Capacitor 100nF', 'ascending quantity');
   p.byId.app.find(e => e.textContent === 'Ascending')[0].click(); assert.strictEqual(order()[0], 'Resistor 4.7k');
 
+  // ---- Search loads 25 groups at a time; a new search or filter starts from the first page again
+  const big = mkInv(); for (let i = 0; i < 60; i++) big.groups.push({ id: 100 + i, key: 'P|x' + i, label: 'Part ' + String(i).padStart(2, '0'), cat: 601, comps: [comp(500 + i, 'X-' + i, [pk(900 + i, 1, 1)], { cat: 601 })] });
+  p = openPage({ inv_load: big }); await sleep(10); p.byId.t3.click();
+  const shown = () => p.byId.app.find(e => e.className === 'tap').length;
+  assert.strictEqual(shown(), 25, 'first page'); assert.ok(/25 of 62 result/.test(p.text()) && /Load more \(37 left\)/.test(p.text()));
+  btn(p, 'Load more (37 left)')[0].click(); assert.strictEqual(shown(), 50, 'the next 25'); btn(p, 'Load more (12 left)')[0].click(); assert.strictEqual(shown(), 62); assert.ok(!/Load more/.test(p.text()) && /62 result/.test(p.text()));
+  type(inputs(p)[0], 'Part'); assert.strictEqual(shown(), 25, 'a new search starts from the first page'); assert.ok(/25 of 60 result/.test(p.text()));
+  assert.strictEqual(p.calls.length, 1, 'loading more makes no server call');
+
   // ---- require reason (a deployment setting) adds a field and checks it
   const need = mkInv(); need.requireReason = true; p = openPage({ inv_load: need, inv_txn: oneComp() }); await sleep(10); p.byId.t3.click();
   p.byId.app.find(e => e.className === 'tap' && /Capacitor/.test(e.textContent))[0].click(); btn(p, 'Edit packet')[0].click(); assert.ok(inputWith(p, 'e.g. board X build'));
   type(inputWith(p, 'e.g. 10'), '1'); btn(p, 'Take')[0].click(); assert.ok(/Say what the parts are for/.test(p.text()) && !p.calls.some(c => c.action === 'inv_txn'));
 
   // ---- Count tab
-  p = openPage({ inv_load: mkInv(), inv_audit: { comps: [oneComp()] } }); await sleep(10); p.byId.t4.click();
+  p = openPage({ inv_load: mkInv(), inv_audit: { comps: [oneComp()] } }); await sleep(10); p.ctx.tab = 'count'; p.ctx.render();   // hidden from the tab bar, the code still works
   assert.ok(/Pick a box/.test(p.text())); choose(selects(p)[0], '1');
   assert.ok(/AC0402FR-072K2L \(recorded 50\)/.test(p.text()) && /CAPX/.test(p.text()));
   const c1 = inputs(p).find(e => e.value === '50'); type(c1, '48'); btn(p, 'Save counts')[0].click();
@@ -250,7 +261,7 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   p = openPage({ inv_load: mkInv(), scan: dupAns, env });
   btn(p, 'Live scan')[0].click(); await sleep(1500);
   const live = p.byId.live;
-  assert.ok(/This packet is in stock/.test(live.textContent) && /AC0402FR-072K2L/.test(live.textContent) && /50 pcs/.test(live.textContent) && /Change something\?/.test(live.textContent), 'live prompt: ' + live.textContent);
+  assert.ok(/ALREADY IN STOCK/.test(live.textContent) && /This packet is in stock/.test(live.textContent) && /AC0402FR-072K2L/.test(live.textContent) && /50 pcs/.test(live.textContent) && /Change something\?/.test(live.textContent), 'live prompt: ' + live.textContent);
   assert.strictEqual(p.calls.filter(c => c.action === 'scan').length, 1, 'asked once');
   btn(p, 'No, keep scanning', live)[0].click(); assert.strictEqual(live.style.display, 'block', 'No: the camera keeps running'); assert.ok(/Reading/.test(live.textContent), 'No resumes scanning');
   await sleep(900);
@@ -309,6 +320,20 @@ const dupAns = { parsed: {}, fp: 'D|x', rec: null, dup: Object.assign({ packetId
   btn(p, 'Live scan')[0].click(); await sleep(900);
   assert.strictEqual(p.calls.filter(c => c.action === 'scan').length, 1, 'the same 2D reading is asked once, then the page keeps reading bars');
   assert.ok(/looking for the part number/.test(p.byId.live.textContent));
+
+  // ---- scanning filters: plain frames first; after two empty frames a clean-up (stretch, then local threshold) is tried on later frames. A dull label (grey 100/140) only
+  // reads once stretched; the plain frames cost nothing extra and the clean-up is never used while frames read.
+  const dull = (w, h) => { if (!dull.d) { dull.d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) { const v = (((i % w) >> 4) + (((i / w) | 0) >> 4)) % 2 ? 100 : 140; dull.d.set([v, v, v, 255], i * 4); } } return dull.d; };
+  const seenLight = []; const dullWasm = { readBarcodes: (img, o) => { seenLight.push(img.data[1]); return Promise.resolve(img.data[1] > 200 ? [{ text: label, format: 'DataMatrix', isValid: true }] : []); } };
+  p = openPage({ inv_load: mkInv(), scan: dupAns, frame: dull, env: { ZXingWASM: dullWasm, navigator: { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop() {} }] }) } } } });
+  btn(p, 'Live scan')[0].click(); await sleep(1500);
+  const reads = seenLight.filter(v => v);   // (the decoder warm-up read has no pixels)
+  assert.ok(reads.slice(0, 4).every(v => v === 140) && reads.includes(255), 'two plain frames (two reads each), then a stretched one: ' + reads.slice(0, 8));
+  assert.ok(/ALREADY IN STOCK/.test(p.byId.live.textContent), 'the dull label read after the clean-up');
+  const crisp = (w, h) => { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) d.set([255, 255, 255, 255], i * 4); for (let i = 0; i < 40; i++) d.set([0, 0, 0, 255], i * 4); return d; };
+  const plainWasm = { readBarcodes: (img) => { seenLight.length = 0; seenLight.push(img.data[1000 * 4 + 1]); return Promise.resolve([{ text: label, format: 'DataMatrix', isValid: true }]); } };
+  p = openPage({ inv_load: mkInv(), scan: dupAns, frame: crisp, env: { ZXingWASM: plainWasm, navigator: { mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [{ stop() {} }] }) } } } });
+  btn(p, 'Live scan')[0].click(); await sleep(700); assert.ok(p.ctx.st.dbg && p.ctx.st.dbg.filter === 'raw' || p.ctx.st.dbg === undefined, 'a frame that reads is never filtered');
 
   // ---- debug panel: API calls today per provider
   p = openPage({ ls: { token: '"abc"', debug: 'true' }, inv_load: mkInv(), usage: { day: '2026-11-19', DigiKey: 12, Mouser: 3 } }); await sleep(10);
