@@ -59,7 +59,7 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
   assert.strictEqual(sent.length, 1, 'DigiKey PN of a part first seen by MPN is a hit');
   r = await scan(['AC0402FR-072K2L']);
   assert.strictEqual(sent.length, 1, 'hit answered without Apps Script');
-  assert.strictEqual(r.body.data.source, 'cloud cache'); assert.deepStrictEqual(r.body.data.rec, rec); assert.strictEqual(r.body.data.parsed.mpn, 'AC0402FR-072K2L');
+  assert.strictEqual(r.body.data.source, 'cloud cache'); assert.strictEqual(r.body.data.rec.mpn, rec.mpn); assert.strictEqual(r.body.data.rec.dkPn, rec.dkPn);   // an old cached record is re-classified on the way out assert.strictEqual(r.body.data.parsed.mpn, 'AC0402FR-072K2L');
 
   answer = () => ({ ok: true, data: { parsed: {}, rec: null, warnings: ['none'] } });
   r = await scan(['zz']);
@@ -118,6 +118,16 @@ const env = { DB, TOKEN: 'tok', EXEC_URL: 'https://exec' };
   await DB.prepare("INSERT INTO usage VALUES ('1999-01-01', 'DigiKey', 500)").run();
   r = await call({ token: 'tok', req: { action: 'usage' } });
   assert.strictEqual(r.body.data.DigiKey, total.DigiKey, 'another UTC day is not mixed in');
+  // a Mouser passive with no size in the API, the text or the part number: one DigiKey lookup by MPN fills what is missing, it is counted, and the merged record is cached
+  await clear('parts'); await clear('usage'); supplier.length = 0;
+  mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: [{ ManufacturerPartNumber: 'XYZ-9', MouserPartNumber: '603-XYZ-9', Manufacturer: 'X', Description: 'Thick Film Resistors - SMD 2.2 kOhms 1%', Category: 'Thick Film Resistors - SMD' }] } } });
+  dkProduct = url => url.includes('productdetails') ? { code: 200, body: fx('dk_AC0402FR-072K2L.json') } : { code: 404 };
+  r = await scan(['603-XYZ-9']);
+  assert.strictEqual(r.body.data.source, 'Mouser'); assert.strictEqual(r.body.data.rec.package, '0402'); assert.strictEqual(r.body.data.rec.groupKey, 'R|2.2k|0402'); assert.deepStrictEqual(r.body.data.rec.missing, []);
+  assert.strictEqual(supplier.filter(c => /productdetails/.test(c.url)).length, 1, 'exactly one DigiKey lookup'); assert.strictEqual(await use(day, 'DigiKey'), 1, 'counted');
+  const nCross = supplier.length; r = await scan(['603-XYZ-9']); assert.strictEqual(supplier.length, nCross, 'merged record is cached');
+  mouser = () => ({ code: 200, body: { Errors: [], SearchResults: { Parts: fx('mouser_AC0402FR-072K2L.json') } } });
+  dkProduct = () => ({ code: 200, body: fx('dk_AC0402FR-072K2L.json') });
   // errors become warnings and never carry a key; a 429 is retried once
   await clear('parts'); supplier.length = 0;
   let n429 = 0;

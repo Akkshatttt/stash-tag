@@ -16,9 +16,9 @@ function doGet(e) {
 
 /** The pure search code, copied into the page so typing in Search needs no server call (one source of truth, also tested in Node). */
 function clientLib_() {
-  var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM, GS: GS, RS: RS };
+  var vars = { PREFIX: PREFIX, KIND_UNIT: KIND_UNIT, KIND_SYM: KIND_SYM, KIND_OF: KIND_OF, GS: GS, RS: RS };
   return Object.keys(vars).map(function (n) { return 'var ' + n + '=' + JSON.stringify(vars[n]) + ';'; }).join('\n') + '\n' +
-    [squash, normPn, eng_, parseValue_, searchRows_, sortRows_, makeDecoder_, decodeWasm_,
+    [squash, normPn, eng_, parseValue_, pkgOf_, specText_, describePassive_, describeRec_, searchRows_, sortRows_, makeDecoder_, decodeWasm_,
       parseLabel_, looksLikeSupplierPn_, guessSupplier_, detectSupplier_, mergeLabels_, partKeys_, fingerprint_, labelStrip_, mouserRead_].map(String).join('\n') +
     '\nvar MOUSER_BARS=' + JSON.stringify(MOUSER_BARS) + ';\nvar MOUSER_PN=' + String(MOUSER_PN) + ';';
 }

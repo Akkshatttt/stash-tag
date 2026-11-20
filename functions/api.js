@@ -5,7 +5,7 @@
 // Bindings (Pages project settings): D1 database as DB; secrets TOKEN (same as the Script property) and EXEC_URL (the /exec URL), PASSWORD (optional),
 // and for the direct lookup DIGIKEY_CLIENT_ID, DIGIKEY_CLIENT_SECRET, MOUSER_KEY.
 // ponytail: records never refresh here; a stock-check feature can overwrite rows when it lands.
-import { mergeLabels_, partKeys_, normPn, noPartWarning_, fingerprint_ } from '../lib/shared.js';
+import { mergeLabels_, partKeys_, normPn, noPartWarning_, fingerprint_, classify_ } from '../lib/shared.js';
 import { haveKeys, lookupPart } from '../lib/lookup.js';
 import { Refuse, ensureSchema, loadAll, addPacket, packetTxn, editComp, audit, addBox, addCategory, history, findByFp, findComp, suggestCat, describe } from '../lib/inv.js';
 
@@ -42,7 +42,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   await ensureSchema(env);
   const fp = fingerprint_(parsed), dup = await findByFp(env, fp);
   if (dup) return reply({ ok: true, data: { parsed, fp, dup, rec: null, source: 'inventory', warnings: [] } });
-  const done = async data => reply({ ok: true, data: Object.assign({ parsed, fp: fp || null, comp: data.rec ? await findComp(env, data.rec) : null, cat: data.rec ? await suggestCat(env, data.rec) : null, descr: data.rec ? describe(data.rec) : null }, data) });
+  const done = async data => { if (data.rec && !data.rec.sp) classify_(data.rec); return reply({ ok: true, data: Object.assign({ parsed, fp: fp || null, comp: data.rec ? await findComp(env, data.rec) : null, cat: data.rec ? await suggestCat(env, data.rec) : null, descr: data.rec ? describe(data.rec) : null }, data) }); };
   if (!parsed.mpn && !parsed.supplierPn) return done({ rec: null, warnings: [noPartWarning_(parsed)] });
   const keys = partKeys_(parsed).keys.slice(0, 20);
   const hit = await cached(env, keys);

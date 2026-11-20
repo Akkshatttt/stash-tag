@@ -149,6 +149,34 @@ t('transceiver goes to Transceivers and keys on its own part number', () => {
   const r = S.fromDigikey_(fx('dk_ADM3067EBRZ.json').Product);
   assert.strictEqual(r.category, 'Transceivers'); assert.strictEqual(r.groupKey, 'P|adm3067ebrz');
 });
+t('part number series decode: package, value, tolerance (the Mouser text may say none of it)', () => {
+  const m = x => JSON.parse(JSON.stringify(S.fromMpn_(x)));
+  assert.deepStrictEqual(m('CRCW0603402KFKEAC'), { kind: 'R', package: '0603', value: '402k', tol: '1%' });
+  assert.deepStrictEqual(m('CRCW08051002FKEA'), { kind: 'R', package: '0805', value: '10k', tol: '1%' }, '4-digit EIA value');
+  assert.deepStrictEqual(m('CRCW04024R70JNED'), { kind: 'R', package: '0402', value: '4.7', tol: '5%' }, '4R70 = 4.7 ohm');
+  assert.deepStrictEqual(m('AC0402FR-072K2L'), { kind: 'R', package: '0402', value: '2.2k', tol: '1%' });
+  assert.strictEqual(m('RC0603JR-070RL').value, '0');
+  assert.deepStrictEqual(m('CL10B104KB8NNNC'), { kind: 'C', package: '0603', value: '100nF', tol: '' });
+  assert.deepStrictEqual(m('GRM155R71C104KA88D'), { kind: 'C', package: '0402', value: '100nF', tol: '' });
+  assert.deepStrictEqual(m('C1608X7R1H104K080AA'), { kind: 'C', package: '0603', value: '100nF', tol: '' });
+  assert.deepStrictEqual(m('C0402C103K5RACTU'), { kind: 'C', package: '0402', value: '10nF', tol: '' });
+  assert.strictEqual(m('ERJ-3EKF1002V').package, '0603'); assert.strictEqual(m('RK73H1JTTD1002F').package, '0603');
+  assert.strictEqual(S.fromMpn_('LM358'), null); assert.strictEqual(S.fromMpn_(''), null);
+});
+t('Mouser passive with no size in its text is completed from the part number and says so', () => {
+  const r = S.fromMouser_({ ManufacturerPartNumber: 'CRCW0603402KFKEAC', MouserPartNumber: '71-CRCW0603-402K-E3', Manufacturer: 'Vishay', Description: 'Thick Film Resistors - SMD 402Kohms 1% 1/10W', Category: 'Thick Film Resistors - SMD' });
+  assert.strictEqual(r.groupKey, 'R|402k|0603'); assert.deepStrictEqual(Array.from(r.from), ['package']); assert.deepStrictEqual(Array.from(r.missing), []);
+  assert.strictEqual(r.sp.pow, '1/10W'); assert.strictEqual(r.sp.tol, '1%');
+});
+t('Mouser passive from an unknown series with no size is flagged missing and keyed on its own part number', () => {
+  const r = S.fromMouser_({ ManufacturerPartNumber: 'XYZ-9', Manufacturer: 'X', Description: 'Thick Film Resistors - SMD 1 kOhms 1%', Category: 'Thick Film Resistors - SMD' });
+  assert.deepStrictEqual(Array.from(r.missing), ['package']); assert.strictEqual(r.groupKey, 'P|xyz9');
+});
+t('Mouser ProductAttributes (case code, values) feed the parser', () => {
+  const r = S.fromMouser_({ ManufacturerPartNumber: 'XYZ-9', Manufacturer: 'X', Description: 'Multilayer Ceramic Capacitors MLCC', Category: 'Ceramic Capacitors',
+    ProductAttributes: [{ AttributeName: 'Packaging', AttributeValue: 'Reel' }, { AttributeName: 'Case Code - in', AttributeValue: '0402' }, { AttributeName: 'Capacitance', AttributeValue: '100 nF' }, { AttributeName: 'Voltage Rating DC', AttributeValue: '50 VDC' }] });
+  assert.strictEqual(r.groupKey, 'C|100nF|0402'); assert.strictEqual(r.sp.volt, '50V');
+});
 t('unknown category falls to Misc', () => assert.strictEqual(S.categoryFor_('Connectors > Headers'), 'Misc'));
 
 // ---- inventory
